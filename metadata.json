@@ -1,0 +1,8 @@
+{
+  "name": "Ginga App",
+  "description": "A complete dance school experience app for Ginga students. Manage schedule, subscriptions, events, and chat in one minimalist interface.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
