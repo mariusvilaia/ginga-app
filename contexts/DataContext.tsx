@@ -13,7 +13,9 @@ import {
   getDocs, 
   writeBatch,
   query,
-  orderBy
+  orderBy,
+  where,
+  limit
 } from 'firebase/firestore';
 import * as FirebaseAuth from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
@@ -318,7 +320,46 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
-  const claimStudentProfile = async (user: FirebaseUser): Promise<boolean> => { return false; };
+  const claimStudentProfile = async (user: FirebaseUser): Promise<boolean> => {
+    try {
+      if (!user.email) return false;
+
+      const currentRef = doc(db, 'students', user.uid);
+      const currentSnap = await getDoc(currentRef);
+      if (currentSnap.exists()) return true;
+
+      const emailQuery = query(
+        collection(db, 'students'),
+        where('email', '==', user.email),
+        limit(1)
+      );
+      const matches = await getDocs(emailQuery);
+      if (matches.empty) return false;
+
+      const legacyDoc = matches.docs[0];
+      const legacyData = legacyDoc.data() as StudentDetailedProfile;
+      const normalized = cleanData({
+        ...legacyData,
+        id: user.uid,
+        email: user.email,
+        name: user.displayName || legacyData.name || 'Utilizator Nou',
+        avatarUrl: user.photoURL || legacyData.avatarUrl,
+        isOnboarded: legacyData.isOnboarded ?? true
+      });
+
+      const batch = writeBatch(db);
+      batch.set(currentRef, normalized, { merge: true });
+      if (legacyDoc.id !== user.uid) {
+        batch.delete(legacyDoc.ref);
+      }
+      await batch.commit();
+
+      return true;
+    } catch (e) {
+      console.error('claimStudentProfile failed:', e);
+      return false;
+    }
+  };
   const updateInstructor = async (id: string, updates: Partial<InstructorProfile>) => { try { await setDoc(doc(db, 'instructors', id), updates, { merge: true }); } catch (e) { console.error(e); } };
   const deleteInstructor = async (id: string) => { if (!id) return; try { await deleteDoc(doc(db, 'instructors', id)); } catch (e) { console.error(e); } };
   const updateClass = async (id: string, updates: Partial<DanceClass>) => { try { await setDoc(doc(db, 'classes', id), updates, { merge: true }); } catch (e) { console.error(e); } };
@@ -598,8 +639,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           await batch.commit();
       } catch (e) { console.error(e); }
   };
-  const syncStripePlans = async () => {};
-  const syncFinancials = async () => {};
+  const syncStripePlans = async () => {
+      await refreshSubscriptionPlans();
+      setLastFinancialSync(new Date());
+  };
+  const syncFinancials = async () => {
+      await fetchStripeCustomers();
+      setLastFinancialSync(new Date());
+  };
   const refreshSubscriptionPlans = async () => {
       try {
           const batch = writeBatch(db);

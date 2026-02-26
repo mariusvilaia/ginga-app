@@ -10,7 +10,7 @@ import { InstructorDashboard } from './features/instructor/InstructorDashboard';
 import { auth, db } from './firebaseConfig';
 import * as FirebaseAuth from "firebase/auth";
 import { useData } from './contexts/DataContext';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, setDoc, where } from 'firebase/firestore';
 
 const App: React.FC = () => {
   const { claimStudentProfile, students } = useData(); // Use the claim function and students data from Context
@@ -24,24 +24,46 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = FirebaseAuth.onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // STRICT CHECK: Only allow access if email is verified
         if (!firebaseUser.emailVerified) {
           FirebaseAuth.signOut(auth);
           setAuthState('logged-out');
           return;
         }
 
-        // Determine Role based on Email
         let role: 'student' | 'admin' | 'instructor' = 'student';
-        
-        // --- ADMIN OVERRIDE ---
         if (firebaseUser.email === 'contact@ginga.ro') {
-            role = 'admin';
+          role = 'admin';
+        } else {
+          try {
+            const token = await firebaseUser.getIdTokenResult();
+            const claimedRole = token.claims.role;
+            if (claimedRole === 'admin' || claimedRole === 'instructor' || claimedRole === 'student') {
+              role = claimedRole;
+            }
+          } catch (e) {
+            console.warn('Could not read role from token claims:', e);
+          }
+
+          if (role === 'student' && firebaseUser.email) {
+            try {
+              const instructorQuery = query(
+                collection(db, 'instructors'),
+                where('email', '==', firebaseUser.email),
+                limit(1)
+              );
+              const instructorMatches = await getDocs(instructorQuery);
+              if (!instructorMatches.empty) {
+                role = 'instructor';
+              }
+            } catch (e) {
+              console.warn('Could not resolve instructor role by email:', e);
+            }
+          }
         }
 
-        // --- CLAIM PROFILE LOGIC (Link Imported CSV to this User) ---
+        let claimedExistingStudent = false;
         if (role === 'student') {
-            await claimStudentProfile(firebaseUser);
+          claimedExistingStudent = await claimStudentProfile(firebaseUser);
         }
 
         // --- FETCH REAL USER DATA FROM FIRESTORE ---
@@ -54,12 +76,14 @@ const App: React.FC = () => {
             role: role
         };
 
+        let hasStudentProfile = false;
         try {
             // Check if we have a student profile for this UID (either just claimed or existed)
             const docRef = doc(db, 'students', firebaseUser.uid);
             const docSnap = await getDoc(docRef);
             
             if (docSnap.exists()) {
+                hasStudentProfile = true;
                 // If profile exists in Firestore, use that data!
                 // This enables the student to see the Subscription/Group assigned by Admin via CSV
                 const firestoreData = docSnap.data();
@@ -70,12 +94,17 @@ const App: React.FC = () => {
         }
 
         setUser(userData);
-        setAuthState('logged-in');
+        const needsOnboarding = role === 'student' && !hasStudentProfile && !claimedExistingStudent;
+        setAuthState(needsOnboarding ? 'onboarding' : 'logged-in');
+      } else {
+        setUser(INITIAL_USER);
+        setAuthState('logged-out');
+        setJustOnboarded(false);
       }
     });
 
     return () => unsubscribe();
-  }, [claimStudentProfile]); // Add claimStudentProfile to dependency array
+  }, []);
 
   const handleLogin = (role: 'admin' | 'instructor' | 'student') => {
     // This function is mostly for Demo button clicks now, but we keep it for fallback logic
@@ -140,6 +169,12 @@ const App: React.FC = () => {
     setUser(finalizedUser);
     setJustOnboarded(true); 
     setAuthState('logged-in');
+
+    if (auth.currentUser) {
+      setDoc(doc(db, 'students', auth.currentUser.uid), finalizedUser, { merge: true }).catch((e) => {
+        console.error("Failed to persist onboarding profile:", e);
+      });
+    }
   };
 
   const handleUpdateProfile = async (updates: Partial<UserProfile>) => {
