@@ -19,12 +19,15 @@ export enum SkillLevel {
 // ... (Existing types remain unchanged) ...
 
 export interface Enrollment {
+  id?: string;
   style: DanceStyle;
   level: SkillLevel;
   groupId?: string;
   groupName?: string;
   role?: string;
   schedule?: string;
+  start_date?: string;
+  end_date?: string;
 }
 
 export interface Achievement {
@@ -158,6 +161,7 @@ export interface NotificationSettings {
 export interface UserProfile {
   id: string;
   name: string;
+  middleName?: string;
   nickname?: string;
   avatarUrl?: string;
   email: string;
@@ -166,6 +170,7 @@ export interface UserProfile {
   gender: 'M' | 'F' | 'Other';
   role: 'student' | 'instructor' | 'admin';
   enrollments: Enrollment[]; 
+  past_enrollments?: Enrollment[];
   favoriteStyle: DanceStyle; 
   goal: string;
   subscription: {
@@ -179,7 +184,18 @@ export interface UserProfile {
     active: boolean;
     isPaused?: boolean;
     autoPayEnabled?: boolean;
+    freezePeriods?: { id: string; startDate: string; endDate: string; reason?: string }[];
   };
+  memberships?: {
+    id: string;
+    planId: string;
+    status: 'active' | 'expired' | 'cancelled';
+    startDate: string;
+    endDate: string;
+    sessionsTotal: number;
+    sessionsLeft: number;
+    supportedEnrollments?: string[]; // Array of enrollment IDs
+  }[];
   billingDetails?: BillingDetails;
   paymentMethods?: PaymentMethod[];
   stats: {
@@ -208,6 +224,7 @@ export interface UserProfile {
 }
 
 export interface StudentDetailedProfile extends UserProfile {
+  stripeCustomerId?: string;
   joinDate: string;
   mainGroup: string;
   status: 'active' | 'inactive' | 'paused';
@@ -234,6 +251,8 @@ export interface StudentDetailedProfile extends UserProfile {
     date: string;
     className: string;
     status: 'present' | 'absent' | 'late';
+    session_id?: string;
+    enrollment_id?: string;
   }[];
   paymentHistory: Transaction[];
   photos?: string[];
@@ -245,12 +264,101 @@ export interface InstructorInfo {
   avatarUrl: string;
 }
 
+export interface SchoolAvgMetrics {
+  ratingAvg: number;
+  retentionPct: number;
+  newStudents30d: number;
+  revenueMonth: number;
+  profitMonth: number;
+}
+
+export interface InstructorMetrics {
+  ratingAvg: number;
+  ratingTrend: number[];
+  ratingDelta: number;
+  
+  retentionPct: number;
+  retentionTrend: number[];
+  retentionDelta: number;
+  
+  punctualityPct: number;
+  punctualityTrend: number[];
+  
+  activeStudents: number;
+  activeStudentsTrend: number[];
+  activeStudentsDelta: number;
+  
+  newStudents30d: number;
+  newStudentsTrend: number[];
+  newStudentsDelta: number;
+  
+  lostStudents30d: number;
+  lostStudentsDelta: number;
+  
+  revenueMonth: number;
+  revenueTrend: number[];
+  revenueDelta: number;
+  
+  costMonth: number;
+  costTrend: number[];
+  
+  profitMonth: number;
+  profitTrend: number[];
+  profitDelta: number;
+  
+  occupancyPct: number;
+  instructorScore: number;
+  instructorScoreLabel: string;
+  
+  forecastStudents: number;
+  forecastRevenue: number;
+  
+  schoolAverages: SchoolAvgMetrics;
+}
+
+export interface GroupSummary {
+  id: string;
+  name: string;
+  level: SkillLevel;
+  studentsCount: number;
+  studentsChange30d: number;
+  dropouts30d: number;
+  retentionPct: number;
+  capacity: number;
+  occupancyPct: number;
+  trendStudentsByMonth: number[];
+  revenueMonth: number;
+  statusComputed: 'Growing' | 'Stable' | 'Declining';
+  riskComputed: boolean;
+  opportunityComputed: boolean;
+}
+
+export interface InstructorSummary {
+  id: string;
+  name: string;
+  avatarUrl: string;
+  styles: DanceStyle[];
+  activeStudents: number;
+  monthlyRevenue: number;
+  occupancyPct: number;
+  studentGrowth30d: number;
+  instructorScore: number;
+  riskReason?: string;
+  performanceBadge?: 'Top Performer' | 'Creștere Rapidă' | 'Retenție Scăzută' | 'Feedback Negativ';
+}
+
 export interface InstructorProfile {
   id: string;
   name: string;
   avatarUrl: string;
   email: string;
   phone: string;
+  bio?: string;
+  specialization?: string;
+  socialMedia?: {
+    instagram?: string;
+    facebook?: string;
+  };
   styles: DanceStyle[];
   levels: SkillLevel[];
   status: 'active' | 'break' | 'inactive';
@@ -291,7 +399,6 @@ export interface InstructorProfile {
     status: 'growing' | 'stable' | 'declining' | 'risk';
     trend?: 'up' | 'down';
   }[];
-  aiRecommendations: string[];
   adminNotes?: AdminNote[];
   stats?: {
     streakWeeks: number;
@@ -300,6 +407,19 @@ export interface InstructorProfile {
     points: number; 
     quizHighScore?: number;
   };
+  // Manager-centric additions
+  managerMetrics?: InstructorMetrics;
+  managerGroups?: GroupSummary[];
+  aiRecommendations?: string[];
+}
+
+export interface ScheduleVersion {
+  id: string;
+  startDate: string;
+  endDate?: string;
+  schedule: { day: string; time: string; duration: string; room: string };
+  instructors: InstructorInfo[];
+  createdAt: string;
 }
 
 export interface GroupDetailedProfile {
@@ -309,6 +429,7 @@ export interface GroupDetailedProfile {
   level: SkillLevel;
   instructors: InstructorInfo[];
   schedule: { day: string; time: string; duration: string; room: string };
+  scheduleVersions?: ScheduleVersion[];
   startDate?: string; // New field for group start date
   status: 'active' | 'closed' | 'recycling' | 'launching';
   createdAt: string;
@@ -350,6 +471,8 @@ export interface DanceClass {
   level: SkillLevel;
   style: DanceStyle;
   date: string; 
+  groupId?: string;
+  scheduleVersionId?: string;
   instructorAvatar?: string;
   occupancy?: { current: number, max: number };
   energyLevel?: 'High' | 'Medium' | 'Low';
@@ -505,14 +628,59 @@ export interface AttendanceRecord {
 
 export interface ActivityLog {
   id: string;
-  type: 'call' | 'message' | 'meeting' | 'note' | 'status_change' | 'transcription';
+  type: 'call' | 'message' | 'meeting' | 'note' | 'status_change' | 'transcription' | 'recording';
   date: string;
   description: string;
   performedBy: string;
+  recordingUrl?: string;
 }
 
-export type LeadStatus = 'Necontactat' | 'Amanat' | 'Programat' | 'Calls back' | 'Nu raspunde' | 'Maybe' | 'Retras' | 'Trimis reminder' | 'Prezent' | 'Platit';
+export enum LeadStage {
+  NEW = 'Nou',
+  SCHEDULED = 'Programat',
+  ATTENDED = 'Prezent',
+  ENROLLED = 'Înrolat',
+  PAID = 'Plătit'
+}
+
+export enum LeadCategory {
+  TODO = 'To-do',
+  IN_PROGRESS = 'In progress',
+  COMPLETE = 'Complete'
+}
+
+export const STAGE_TO_CATEGORY: Record<LeadStage, LeadCategory> = {
+  [LeadStage.NEW]: LeadCategory.TODO,
+  [LeadStage.SCHEDULED]: LeadCategory.IN_PROGRESS,
+  [LeadStage.ATTENDED]: LeadCategory.IN_PROGRESS,
+  [LeadStage.ENROLLED]: LeadCategory.COMPLETE,
+  [LeadStage.PAID]: LeadCategory.COMPLETE,
+};
+
+export interface LeadActivity {
+  id: string;
+  leadId: string;
+  type: 'call' | 'whatsapp' | 'sms' | 'email' | 'reminder' | 'note';
+  outcome: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface StageHistory {
+  id: string;
+  leadId: string;
+  fromStage: LeadStage | null;
+  toStage: LeadStage;
+  changedAt: string;
+}
+
 export type LeadSource = 'Website form' | 'Facebook Lead Ads' | 'Instagram DM' | 'Referral' | 'Direct call' | 'Walk-in' | 'Phone' | 'Whatsapp';
+
+export interface ScheduledClass {
+  date: string;
+  style: string;
+  groupId?: string;
+}
 
 export interface Lead {
   id: string;
@@ -523,7 +691,11 @@ export interface Lead {
   avatarUrl?: string;
   source: LeadSource;
   entryDate: string;
-  status: LeadStatus;
+  stage: LeadStage;
+  scheduledClassDateTime?: string;
+  scheduledClasses?: ScheduledClass[];
+  activities: LeadActivity[];
+  stageHistory: StageHistory[];
   interest: {
     styles: DanceStyle[];
     style: DanceStyle;
@@ -540,6 +712,11 @@ export interface Lead {
   probability: number;
   activityLog: ActivityLog[];
   notes: string;
+  createdAt?: string;
+  scheduledAt?: string;
+  attendedAt?: string;
+  enrolledAt?: string;
+  paidAt?: string;
 }
 
 export interface MessageTemplate {

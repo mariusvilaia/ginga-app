@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Search, Sun, Moon, Bell, Settings, LogOut, X, User, Layers, GraduationCap, ListTodo, MessageSquare, Command, ArrowRight, Menu, Target, CheckCircle2 } from 'lucide-react';
+import { Calendar, Search, Sun, Moon, Bell, Settings, LogOut, X, User, Layers, GraduationCap, ListTodo, MessageSquare, Command, ArrowRight, Menu, Target, CheckCircle2, CreditCard } from 'lucide-react';
 import { UserProfile, AdminTask, GlobalSearchResult } from '../../../types';
 import { MOCK_NOTIFICATIONS_HISTORY } from '../../../constants';
 import { useGlobalSearch } from '../../../hooks/useGlobalSearch';
@@ -164,7 +164,7 @@ export const Header: React.FC<HeaderProps> = ({
                             )}
                             <div className="min-w-0">
                                 <p 
-                                    className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2 truncate"
+                                    className="text-sm font-bold text-gray-900 dark:text-white truncate"
                                     dangerouslySetInnerHTML={{ __html: getHighlightedText(result.title, query) }} 
                                 />
                                 <p className="text-xs text-gray-500 font-medium truncate">{result.subtitle}</p>
@@ -263,9 +263,9 @@ export const Header: React.FC<HeaderProps> = ({
 
        {/* 3. RIGHT: ACTIONS & PROFILE */}
        <div className="flex items-center justify-end gap-3 md:gap-4 shrink-0 relative z-50">
-         <button onClick={toggleDarkMode} className="p-2 md:p-2.5 rounded-full border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all shrink-0">
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-         </button>
+          <button onClick={() => setActiveTab('stripe')} className={`p-2 md:p-2.5 rounded-full border transition-all shrink-0 ${activeTab === 'stripe' ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+            <CreditCard size={20} />
+          </button>
 
          {/* Notifications Dropdown */}
          <div className="relative shrink-0" ref={notificationsRef}>

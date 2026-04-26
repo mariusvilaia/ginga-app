@@ -21,7 +21,7 @@ export const StudentAttendancePage: React.FC<StudentAttendancePageProps> = ({ us
   // 1. Get Attended Classes Data
   const attendedClasses = useMemo(() => {
       // Filter classes the user has attended
-      const list = classes.filter(cls => user.attendedClasses.includes(cls.id));
+      const list = classes.filter(cls => user.attendedClasses?.includes(cls.id));
       // Sort descending (newest first)
       return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [classes, user.attendedClasses]);

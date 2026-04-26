@@ -7,15 +7,18 @@ import { useData } from '../../contexts/DataContext';
 import { ImageCropper } from '../../components/shared/ImageCropper';
 import { normalizeText, smartSearch } from '../../utils/searchUtils';
 import { normalizeRoPhone } from '../../utils/phoneUtils';
+import { guessGenderByName } from '../../utils/genderUtils';
+import { StripeCustomer } from '../../src/services/stripeService';
 
 interface AddStudentModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (student: StudentDetailedProfile) => void;
     initialData?: StudentDetailedProfile | null;
+    stripeCustomer?: StripeCustomer | null; // Added
     initialGroupId?: string; // Prop for pre-filling enrollment
     existingStudents?: StudentDetailedProfile[]; // Prop for searching existing students
-    onAddExisting?: (studentId: string) => void; // Callback when adding an existing student
+    onAddExisting?: (studentId: string) => Promise<void> | void; // Callback when adding an existing student
 }
 
 const SUBSCRIPTION_LIMITS: Record<string, number> = {
@@ -27,12 +30,14 @@ const SUBSCRIPTION_LIMITS: Record<string, number> = {
 };
 
 interface EnrollmentItem {
+    id?: string;
     groupId: string;
     groupName: string;
     style: DanceStyle;
     level: SkillLevel;
     role: 'Leader' | 'Follower';
     schedule: string;
+    start_date?: string;
 }
 
 export const AddStudentModal: React.FC<AddStudentModalProps> = ({ 
@@ -40,10 +45,12 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
     onClose, 
     onSave, 
     initialData, 
+    stripeCustomer,
     initialGroupId,
     existingStudents = [],
     onAddExisting
 }) => {
+    const [isAddingExisting, setIsAddingExisting] = useState<string | null>(null);
     const { groups } = useData(); 
 
     // Mode Toggle (Only visible if initialGroupId is present)
@@ -85,6 +92,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
     const [tempStyle, setTempStyle] = useState<DanceStyle>(DanceStyle.BACHATA);
     const [tempGroupId, setTempGroupId] = useState<string>('');
     const [tempRole, setTempRole] = useState<'Leader' | 'Follower'>('Follower');
+    const [isRoleManuallySet, setIsRoleManuallySet] = useState(false);
 
     const limit = SUBSCRIPTION_LIMITS[formData.subscriptionType] || 1;
     const isLimitReached = enrollments.length >= limit;
@@ -134,7 +142,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
 
                 setFormData({
                     firstName,
-                    middleName,
+                    middleName: initialData.middleName || middleName,
                     lastName,
                     nickname: initialData.nickname || '',
                     email: initialData.email,
@@ -156,12 +164,14 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
                     const restoredEnrollments: EnrollmentItem[] = initialData.enrollments.map(enr => {
                         const matchedGroup = groups.find(g => g.id === enr.groupId) || groups.find(g => g.name === enr.groupName);
                         return {
+                            id: enr.id,
                             groupId: enr.groupId || matchedGroup?.id || '',
                             groupName: enr.groupName || matchedGroup?.name || `${enr.style} ${enr.level}`,
                             style: enr.style,
                             level: enr.level,
                             role: (enr.role as 'Leader' | 'Follower') || (initialData.gender === 'M' ? 'Leader' : 'Follower'),
-                            schedule: enr.schedule || (matchedGroup ? `${matchedGroup.schedule.day} ${matchedGroup.schedule.time}` : 'N/A')
+                            schedule: enr.schedule || (matchedGroup ? `${matchedGroup.schedule.day} ${matchedGroup.schedule.time}` : 'N/A'),
+                            start_date: enr.start_date
                         };
                     });
                     setEnrollments(restoredEnrollments);
@@ -169,6 +179,26 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
                     setEnrollments([]);
                 }
 
+            } else if (stripeCustomer) {
+                // Stripe Create Mode
+                const names = (stripeCustomer.name || '').split(' ');
+                setFormData({
+                    firstName: names[0] || '',
+                    middleName: '',
+                    lastName: names.slice(1).join(' ') || '',
+                    nickname: '',
+                    email: stripeCustomer.email || '',
+                    phone: stripeCustomer.phone || '',
+                    subscriptionType: 'Silver',
+                    avatarUrl: ''
+                });
+                const today = new Date().toISOString().split('T')[0];
+                handlePaymentChange(today);
+                setIsLoyalty(true);
+                setOriginalImageSrc(null);
+                setErrors({});
+                setIsRoleManuallySet(false);
+                setEnrollments([]);
             } else {
                 // Create Mode
                 setFormData({ firstName: '', middleName: '', lastName: '', nickname: '', email: '', phone: '', subscriptionType: 'Silver', avatarUrl: '' });
@@ -198,9 +228,21 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
                 setIsLoyalty(true);
                 setOriginalImageSrc(null);
                 setErrors({}); // Clear errors
+                setIsRoleManuallySet(false);
             }
         }
-    }, [isOpen, initialData, groups, initialGroupId]);
+    }, [isOpen, initialData, stripeCustomer, groups, initialGroupId]);
+
+    // Auto-guess role based on name
+    useEffect(() => {
+        if (!initialData && !isRoleManuallySet && (formData.firstName || formData.middleName || formData.lastName)) {
+            const fullName = [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(' ').trim();
+            if (fullName) {
+                const guessedGender = guessGenderByName(fullName);
+                setTempRole(guessedGender === 'M' ? 'Leader' : 'Follower');
+            }
+        }
+    }, [formData.firstName, formData.middleName, formData.lastName, isRoleManuallySet, initialData]);
 
     // --- PASTE LISTENER FOR IMAGE ---
     useEffect(() => {
@@ -241,10 +283,16 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
         ).slice(0, 5); // Limit results
     }, [searchTerm, existingStudents]);
 
-    const handleSelectExisting = (studentId: string) => {
+    const handleSelectExisting = async (studentId: string) => {
         if (onAddExisting) {
-            onAddExisting(studentId);
-            onClose();
+            setIsAddingExisting(studentId);
+            try {
+                await onAddExisting(studentId);
+            } catch (error) {
+                console.error('Error adding existing student:', error);
+            } finally {
+                setIsAddingExisting(null);
+            }
         }
     };
 
@@ -368,20 +416,34 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
         }[formData.subscriptionType] || { planId: 'bronze' };
 
         const finalEnrollments = enrollments.map(e => ({ 
+            id: e.id || `enr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             style: e.style, 
             level: e.level,
             groupId: e.groupId,
             groupName: e.groupName,
             role: e.role,
-            schedule: e.schedule
+            schedule: e.schedule,
+            start_date: e.start_date || new Date().toISOString().split('T')[0]
         }));
 
         const finalPhone = normalizeRoPhone(formData.phone);
+
+        const newMembership = {
+            id: `mem_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            planId: subDetails.planId,
+            status: 'active' as const,
+            startDate: paymentDate,
+            endDate: expiryDate,
+            sessionsTotal: 8, // Default or derived from plan
+            sessionsLeft: 8,
+            supportedEnrollments: finalEnrollments.map(e => e.id)
+        };
 
         if (initialData) {
             const updatedStudent: StudentDetailedProfile = {
                 ...initialData,
                 name: fullName,
+                middleName: formData.middleName,
                 nickname: formData.nickname,
                 email: formData.email,
                 phone: finalPhone,
@@ -394,6 +456,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
                     lastPaymentDate: paymentDate,
                     autoPayEnabled: isLoyalty
                 },
+                memberships: initialData.memberships?.length ? initialData.memberships : [newMembership],
                 enrollments: finalEnrollments,
                 mainGroup: finalEnrollments.length > 0 ? finalEnrollments[0].groupName! : initialData.mainGroup
             };
@@ -407,6 +470,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
             const newStudent: StudentDetailedProfile = {
                 id: newId,
                 name: fullName,
+                middleName: formData.middleName,
                 nickname: formData.nickname,
                 email: formData.email,
                 phone: finalPhone,
@@ -431,6 +495,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
                     active: true,
                     autoPayEnabled: isLoyalty
                 },
+                memberships: [newMembership],
                 stats: { streakWeeks: 0, totalClasses: 0, hoursDanced: 0, points: 0 },
                 achievements: [],
                 personalVideos: [],
@@ -510,6 +575,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
                                                 <Button 
                                                     onClick={() => handleSelectExisting(student.id)} 
                                                     className="!w-auto h-8 px-3 text-[10px]"
+                                                    isLoading={isAddingExisting === student.id}
                                                 >
                                                     Adaugă
                                                 </Button>
@@ -737,7 +803,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
                                         <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Rol</label>
                                         <select 
                                             value={tempRole}
-                                            onChange={(e) => setTempRole(e.target.value as any)}
+                                            onChange={(e) => { setTempRole(e.target.value as any); setIsRoleManuallySet(true); }}
                                             className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-900 text-xs font-bold outline-none focus:border-blue-500 transition-colors dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                         >
                                             <option value="Leader">Leader</option>

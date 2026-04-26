@@ -1,11 +1,12 @@
 
 import React, { useState, useMemo } from 'react';
-import { ArrowLeft, Users, CalendarCheck, Zap, MessageSquare, AlertTriangle, Sparkles, TrendingUp, ArrowUpRight, ArrowDownRight, Check, X, Calendar, Edit3, UserPlus, Trash2, GitMerge } from 'lucide-react';
-import { GroupDetailedProfile, DanceStyle, SkillLevel, InstructorInfo } from '../../../types';
+import { ArrowLeft, Users, CalendarCheck, Zap, MessageSquare, AlertTriangle, Sparkles, TrendingUp, ArrowUpRight, ArrowDownRight, Check, X, Calendar, Edit3, UserPlus, Trash2, GitMerge, Clock } from 'lucide-react';
+import { GroupDetailedProfile, DanceStyle, SkillLevel, InstructorInfo, ScheduleVersion } from '../../../types';
 import { Button, Badge } from '../../../components/UIComponents';
 import { getStyleTheme } from '../../../utils/themeUtils';
 import { useData } from '../../../contexts/DataContext';
 import { EditScheduleModal } from './EditScheduleModal';
+import { EditScheduleVersionModal } from './EditScheduleVersionModal';
 import { AddStudentModal } from '../../students/AddStudentModal';
 import { normalizeText, smartSearch } from '../../../utils/searchUtils';
 import { GroupAttendanceMatrix } from './GroupAttendanceMatrix';
@@ -19,12 +20,13 @@ interface GroupDetailPanelProps {
 }
 
 export const GroupDetailPanel: React.FC<GroupDetailPanelProps> = ({ group, onBack, onNavigateToStudent, onAddTask }) => {
-    const { students, instructors, groups, updateMasterSchedule, updateGroup, addStudent, updateStudent, removeStudentFromGroup, deleteGroup } = useData();
-    const [activeTab, setActiveTab] = useState<'students' | 'attendance' | 'risk'>('attendance');
+    const { students, instructors, groups, updateMasterSchedule, updateScheduleVersion, updateGroup, addStudent, updateStudent, removeStudentFromGroup, deleteGroup } = useData();
+    const [activeTab, setActiveTab] = useState<'students' | 'attendance' | 'risk' | 'history'>('attendance');
     const [studentSearch, setStudentSearch] = useState('');
     const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
     const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
     const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+    const [editingVersion, setEditingVersion] = useState<ScheduleVersion | null>(null);
 
     // KEY FIX: Use the group from context to ensure live data (e.g. updated stats after removal)
     const activeGroup = groups.find(g => g.id === group.id) || group;
@@ -83,17 +85,11 @@ export const GroupDetailPanel: React.FC<GroupDetailPanelProps> = ({ group, onBac
 
     const filteredStudents = groupStudents.filter(s => smartSearch(studentSearch, s.name));
 
-    const handleScheduleUpdate = async (data: { day: string; time: string; room: string; duration: string; name: string; level: SkillLevel; startDate: string; instructors: InstructorInfo[] }) => {
-        const { name, level, startDate, instructors: newInstructors, ...schedule } = data;
+    const handleScheduleUpdate = async (data: { day: string; time: string; room: string; duration: string; name: string; level: SkillLevel; startDate: string; instructors: InstructorInfo[]; effectiveDate: string }) => {
+        const { name, level, startDate, instructors: newInstructors, effectiveDate, ...schedule } = data;
         
-        // Update Schedule Logic (propagates name changes)
-        await updateMasterSchedule(activeGroup.id, schedule, name, level);
-        
-        // Update Group-Specific fields (Start Date & Instructors)
-        await updateGroup(activeGroup.id, { 
-            startDate,
-            instructors: newInstructors
-        });
+        // Update Schedule Logic (propagates name changes and creates new version)
+        await updateMasterSchedule(activeGroup.id, schedule, name, level, effectiveDate, newInstructors, startDate);
     };
 
     const handleRemoveStudent = async (studentId: string, studentName: string) => {
@@ -153,7 +149,7 @@ export const GroupDetailPanel: React.FC<GroupDetailPanelProps> = ({ group, onBac
                 
                 {/* LEFT COLUMN: Info Card */}
                 <div className="w-full xl:w-[400px] flex-shrink-0 flex flex-col gap-4 xl:h-full xl:overflow-y-auto no-scrollbar xl:pb-10">
-                    <div className="bg-white dark:bg-gray-900 rounded-[32px] p-6 shadow-sm border border-gray-100 dark:border-gray-800 relative overflow-hidden">
+                    <div className="bg-white/20 backdrop-blur-xl border border-white/30 shadow-lg dark:bg-gray-900/20 dark:border-white/10 rounded-[32px] p-6 relative overflow-hidden">
                         <div className={`absolute top-0 left-0 right-0 h-2 ${theme.bg}`}></div>
                         <div className="flex justify-between items-center mb-6 mt-2">
                             <span className={`${theme.softBg} ${theme.softText} px-3 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wide`}>{activeGroup.level}</span>
@@ -191,7 +187,7 @@ export const GroupDetailPanel: React.FC<GroupDetailPanelProps> = ({ group, onBac
                             <div className="flex gap-3">
                                 {activeGroup.instructors.map((inst, i) => (
                                     <div key={i} className="flex flex-col items-center">
-                                        <img src={getInstructorAvatar(inst)} className="w-14 h-14 rounded-full border-2 border-white dark:border-gray-900 bg-gray-100 object-cover shadow-sm" />
+                                        <img src={getInstructorAvatar(inst)} className="w-20 h-20 rounded-full border-2 border-white dark:border-gray-900 bg-gray-100 object-cover shadow-sm" />
                                         <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 mt-1">{(inst.name || '').split(' ')[0]}</span>
                                     </div>
                                 ))}
@@ -217,6 +213,7 @@ export const GroupDetailPanel: React.FC<GroupDetailPanelProps> = ({ group, onBac
                             {[ 
                                 { id: 'attendance', label: 'Prezență', icon: CalendarCheck },
                                 { id: 'students', label: 'Cursanți', icon: Users }, 
+                                { id: 'history', label: 'Istoric Orar', icon: Clock },
                                 { id: 'risk', label: 'Risc & AI', icon: Zap } 
                             ].map(tab => (
                                 <button 
@@ -284,6 +281,52 @@ export const GroupDetailPanel: React.FC<GroupDetailPanelProps> = ({ group, onBac
                                 />
                             </div>
                         )}
+                        {activeTab === 'history' && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-right-2">
+                                <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-4 gap-4">
+                                    <h3 className="font-bold text-gray-900 dark:text-white">Istoric Versiuni Orar</h3>
+                                </div>
+                                <div className="space-y-4">
+                                    {(activeGroup.scheduleVersions || []).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()).map(version => (
+                                        <div key={version.id} className="bg-white dark:bg-gray-900 p-5 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <Badge color="bg-blue-100 text-blue-700">
+                                                        {new Date(version.startDate).toLocaleDateString('ro-RO')} - {version.endDate ? new Date(version.endDate).toLocaleDateString('ro-RO') : 'Prezent'}
+                                                    </Badge>
+                                                    {!version.endDate && <Badge color="bg-green-100 text-green-700">Activ</Badge>}
+                                                </div>
+                                                <div className="flex items-center gap-3 text-sm font-bold text-gray-900 dark:text-white">
+                                                    <span>{version.schedule.day}</span>
+                                                    <span className="text-gray-300">|</span>
+                                                    <span>{version.schedule.time}</span>
+                                                    <span className="text-gray-300">|</span>
+                                                    <span className="text-gray-500 font-medium">{version.schedule.room}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 mt-3">
+                                                    {version.instructors.map((inst, i) => (
+                                                        <div key={i} className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded-lg">
+                                                            <img src={getInstructorAvatar(inst)} className="w-4 h-4 rounded-full object-cover" />
+                                                            <span className="text-[10px] font-bold text-gray-600 dark:text-gray-400">{(inst.name || '').split(' ')[0]}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <Button variant="secondary" onClick={() => setEditingVersion(version)} className="!w-auto px-4 h-9 text-xs gap-2">
+                                                <Edit3 size={14} /> Editează
+                                            </Button>
+                                        </div>
+                                    ))}
+                                    {(!activeGroup.scheduleVersions || activeGroup.scheduleVersions.length === 0) && (
+                                        <div className="text-center py-10 bg-gray-50 dark:bg-gray-800/50 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700">
+                                            <Clock className="mx-auto h-10 w-10 text-gray-400 mb-3" />
+                                            <p className="text-sm font-medium text-gray-500">Nu există istoric de versiuni pentru această grupă.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {activeTab === 'risk' && (
                             <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-100 dark:border-gray-800 p-6 space-y-3 animate-in fade-in slide-in-from-right-2">
                                 {activeGroup.aiInsights.map((insight, idx) => (
@@ -329,6 +372,18 @@ export const GroupDetailPanel: React.FC<GroupDetailPanelProps> = ({ group, onBac
                     onBack();
                 }}
             />
+
+            {editingVersion && (
+                <EditScheduleVersionModal
+                    isOpen={!!editingVersion}
+                    onClose={() => setEditingVersion(null)}
+                    version={editingVersion}
+                    onSave={async (versionId, data) => {
+                        await updateScheduleVersion(activeGroup.id, versionId, data);
+                        setEditingVersion(null);
+                    }}
+                />
+            )}
         </div>
     );
 };

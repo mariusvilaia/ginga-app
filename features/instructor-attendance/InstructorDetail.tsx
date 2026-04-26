@@ -29,7 +29,7 @@ export const InstructorDetail: React.FC<InstructorDetailProps> = ({ instructorId
         
         const findInstructorIdByName = (partialName: string) => {
             const match = MOCK_INSTRUCTORS_DATA.find(i => 
-                i.name.toLowerCase().includes(partialName.toLowerCase()) || 
+                i.name?.toLowerCase().includes(partialName.toLowerCase()) || 
                 partialName.toLowerCase().includes((i.name || '').split(' ')[0].toLowerCase())
             );
             return match ? match.id : null;

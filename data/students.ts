@@ -1,4 +1,5 @@
 import { StudentDetailedProfile, DanceStyle, SkillLevel } from '../types';
+import { guessGenderByName, guessRoleByGender } from '../utils/genderUtils';
 
 const BASE_STUDENTS: StudentDetailedProfile[] = [
     // --- SPECIAL STATUS: ANULAT (Active but AutoPay False) ---
@@ -214,11 +215,9 @@ const createImportedStudent = (
     style: DanceStyle,
     level: SkillLevel
 ): StudentDetailedProfile => {
-    // Gender & Avatar Logic
-    const firstName = name.split(' ')[0];
-    // Simple heuristic for gender based on Romanian names (ending in 'a' usually female)
-    const isFemale = firstName.endsWith('a') || firstName.endsWith('ia') || firstName.endsWith('na') || firstName.endsWith('ca');
-    const gender = isFemale ? 'F' : 'M';
+    const gender = guessGenderByName(name);
+    const role = guessRoleByGender(gender);
+    const isFemale = gender === 'F';
     const avatarSet = isFemale ? 'women' : 'men';
     // Deterministic random image based on index to keep it consistent on re-renders
     const imgId = index % 99;
@@ -242,7 +241,7 @@ const createImportedStudent = (
         age: 20 + (index % 25), // Random age 20-45
         gender: gender, 
         role: 'student',
-        enrollments: [{ style, level, groupId, groupName }],
+        enrollments: [{ style, level, groupId, groupName, role }],
         favoriteStyle: style,
         goal: 'Distracție',
         joinDate: calculatedJoinDate,

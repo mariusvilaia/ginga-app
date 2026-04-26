@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Modal, Button } from '../../components/UIComponents';
-import { useData } from '../../contexts/DataContext';
+import { Modal, Button } from '../../../components/UIComponents';
+import { useData } from '../../../contexts/DataContext';
 import { Trash2, Plus, Calendar } from 'lucide-react';
-import { VacationPeriod } from '../../types';
+import { VacationPeriod } from '../../../types';
 
 interface VacationManagerModalProps {
     isOpen: boolean;

@@ -1,11 +1,14 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile, ChatMember } from '../../types';
 import { Sidebar } from './layout/Sidebar';
 import { Header } from './layout/Header';
 import { MobileNav } from './layout/MobileNav';
 import { useData } from '../../contexts/DataContext';
 import { Gamepad2, ScanFace } from 'lucide-react';
+import { fetchStripeCustomers, fetchStripeSubscriptions, fetchStripePayments, syncStripePayments, StripeCustomer } from '../../src/services/stripeService';
+import { StudentDetailedProfile } from '../../types';
+import { calculateSubscriptionExpiryDate } from '../../utils/dateUtils';
 
 import { OverviewView } from '../../features/overview/OverviewView';
 import { StudentsView } from '../../features/students/StudentsView';
@@ -19,6 +22,7 @@ import { ScheduleView } from '../../features/schedule/ScheduleView';
 import { SettingsView } from '../../features/settings/SettingsView';
 import { TasksView } from '../../features/tasks/TasksView';
 import { FinanceView } from '../../features/finance/FinanceView';
+import { StripeLiveView } from '../../features/stripe/StripeLiveView';
 import { NameQuizGame } from '../../features/students/components/NameQuizGame';
 import { FaceQuizGame } from '../../features/students/components/FaceQuizGame';
 
@@ -40,9 +44,9 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = ({
   onUpdateProfile
 }) => {
   // Use tasks from DataContext instead of local state
-  const { students, groups, tasks, addTask, updateTask, deleteTask } = useData();
+  const { students, groups, tasks, addTask, updateTask, deleteTask, vacationPeriods, updateStudent } = useData();
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'games' | 'groups' | 'attendance' | 'instructor_attendance' | 'schedule' | 'instructors' | 'leads' | 'communications' | 'settings' | 'tasks' | 'finance'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'games' | 'groups' | 'attendance' | 'instructor_attendance' | 'schedule' | 'instructors' | 'leads' | 'communications' | 'settings' | 'tasks' | 'finance' | 'stripe'>('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); 
   const [gameMode, setGameMode] = useState<'name' | 'face'>('name');
@@ -51,6 +55,150 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = ({
   const [targetInstructorId, setTargetInstructorId] = useState<string | null>(null);
   const [targetStudentId, setTargetStudentId] = useState<string | null>(null);
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
+
+  const syncAllStripeData = async (silent = true) => {
+      try {
+        const [customers, subscriptions, payments] = await Promise.all([
+          fetchStripeCustomers(),
+          fetchStripeSubscriptions(),
+          fetchStripePayments(),
+        ]);
+
+        const matchedData = customers.map(customer => {
+          let student = students.find(s => s.stripeCustomerId === customer.id) || students.find(s => s.email.toLowerCase() === customer.email.toLowerCase());
+          return { customer, student, isMatched: !!student };
+        });
+
+        const matchedStudents = matchedData.filter(item => item.isMatched && item.student && item.customer);
+
+        const handleSyncPayments = async (student: StudentDetailedProfile, customer: StripeCustomer, silent = false) => {
+          try {
+            const { payments: syncedPayments, subscription: syncedSubscription } = await syncStripePayments({
+              stripeCustomerId: customer.id,
+              email: customer.email,
+              name: customer.name,
+              phone: customer.phone,
+            });
+      
+            let updatedSubscription = { ...student.subscription };
+            let hasSubscriptionChanges = false;
+
+            if (syncedSubscription) {
+              let newPlan = updatedSubscription.type;
+              if (syncedSubscription.planName?.includes('Bronze')) newPlan = 'Bronze';
+              else if (syncedSubscription.planName?.includes('Silver')) newPlan = 'Silver';
+              else if (syncedSubscription.planName?.includes('Gold')) newPlan = 'Gold';
+              else if (syncedSubscription.planName?.includes('Platinum')) newPlan = 'Platinum';
+
+              if (newPlan !== updatedSubscription.type) {
+                updatedSubscription.type = newPlan;
+                hasSubscriptionChanges = true;
+              }
+              
+              if (syncedSubscription.status === 'active') {
+                updatedSubscription.active = true;
+                hasSubscriptionChanges = true;
+              }
+            }
+
+            if (!syncedPayments || syncedPayments.length === 0) {
+              if (hasSubscriptionChanges) {
+                updateStudent(student.id, { subscription: updatedSubscription });
+              }
+              return;
+            }
+      
+            const existingPayments = student.paymentHistory || [];
+            const uniqueNewPaymentsMap = new Map<string, any>();
+            
+            for (const sp of syncedPayments) {
+                const spDate = new Date(sp.date).getTime();
+                
+                // Check if there's an existing payment with the same amount within +/- 3 days
+                const isDuplicate = existingPayments.some(ep => {
+                    if (ep.id === sp.id) return true; // Exact match by Stripe ID
+                    if (ep.amount !== sp.amount) return false;
+                    
+                    const epDate = new Date(ep.date).getTime();
+                    const diffDays = Math.abs(spDate - epDate) / (1000 * 3600 * 24);
+                    return diffDays <= 3;
+                });
+
+                if (!isDuplicate && !uniqueNewPaymentsMap.has(sp.id)) {
+                    uniqueNewPaymentsMap.set(sp.id, sp);
+                }
+            }
+            const newPayments = Array.from(uniqueNewPaymentsMap.values());
+      
+            if (newPayments.length === 0) {
+              if (hasSubscriptionChanges) {
+                updateStudent(student.id, { subscription: updatedSubscription });
+              }
+              return;
+            }
+      
+            let updatedPaymentHistory: any[] = [...(student.paymentHistory || []), ...newPayments];
+            updatedPaymentHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+            const latestPayment = updatedPaymentHistory[0];
+            let newExpiryDateStr = updatedSubscription.expiryDate;
+            let newLastPaymentDate = updatedSubscription.lastPaymentDate;
+      
+            if (latestPayment) {
+              const adjustedExpiryDate = calculateSubscriptionExpiryDate(updatedPaymentHistory, updatedSubscription.expiryDate, vacationPeriods);
+              newExpiryDateStr = adjustedExpiryDate.toISOString().split('T')[0];
+              newLastPaymentDate = latestPayment.date;
+            }
+      
+            updateStudent(student.id, {
+              paymentHistory: updatedPaymentHistory,
+              subscription: {
+                ...updatedSubscription,
+                active: true,
+                lastPaymentDate: newLastPaymentDate,
+                expiryDate: newExpiryDateStr,
+              },
+            });
+          } catch (err: any) {
+            console.error(`Eroare la sincronizarea plăților pentru ${student.name}:`, err);
+          }
+        };
+
+        for (const item of matchedStudents) {
+          await handleSyncPayments(item.student!, item.customer, true);
+        }
+
+        if (!silent) {
+          alert(`Sincronizare în masă finalizată pentru ${matchedStudents.length} clienți!`);
+        }
+      } catch (error) {
+        console.error("Eroare la sincronizarea automată Stripe:", error);
+      }
+    };
+
+
+  const syncAllStripeDataRef = React.useRef(syncAllStripeData);
+  
+  useEffect(() => {
+    syncAllStripeDataRef.current = syncAllStripeData;
+  }, [syncAllStripeData]);
+
+  useEffect(() => {
+    // Run once on mount after a short delay to ensure data is loaded
+    const initialTimeout = setTimeout(() => {
+      syncAllStripeDataRef.current(true);
+    }, 5000);
+
+    // Then run every hour
+    const intervalId = setInterval(() => {
+      syncAllStripeDataRef.current(true);
+    }, 60 * 60 * 1000); // 1 hour
+
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(intervalId);
+    };
+  }, []);
 
   // Helper for adding tasks via shortcut
   const handleQuickAddTask = (title: string, priority: 'high' | 'medium' | 'low' = 'medium', tag: string = '', assignee?: {name: string, avatarUrl: string}, description?: string, status: 'inbox' | 'pending' | 'done' | 'archived' = 'inbox', projectId?: string) => {
@@ -171,9 +319,10 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = ({
           {activeTab === 'instructors' && <InstructorsView initialInstructorId={targetInstructorId} onClearInitial={() => setTargetInstructorId(null)} />}
           {activeTab === 'leads' && <LeadsView onNavigateToStudent={handleNavigateToStudent} onAddTask={handleQuickAddTask} />}
           {activeTab === 'communications' && <CommunicationsView onNavigateToStudent={handleNavigateToStudent} initialConversationId={targetConversationId} />}
-          {activeTab === 'settings' && <SettingsView user={user} onUpdateProfile={onUpdateProfile} />}
+          {activeTab === 'settings' && <SettingsView user={user} onUpdateProfile={onUpdateProfile} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />}
           {activeTab === 'tasks' && <TasksView tasks={tasks} onAddTask={handleQuickAddTask} onUpdateTask={updateTask} onToggleTask={(id) => toggleTaskStatus(id)} onDeleteTask={(id) => deleteTask(id)} />}
           {activeTab === 'finance' && <FinanceView />}
+          {activeTab === 'stripe' && <StripeLiveView />}
         </div>
       </main>
       <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} onToggleSidebar={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />

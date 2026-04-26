@@ -125,7 +125,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onAddTask, onUpdate
     const assigneeOptions = [
         ...staffMembers,
         ...instructors.map(i => ({ id: i.id, name: i.name, avatarUrl: i.avatarUrl }))
-    ].filter(p => !['Ana', 'Dan'].includes(p.name) && !p.name.startsWith('Ana ') && !p.name.startsWith('Dan '));
+    ].filter(p => p.name && !['Ana', 'Dan'].includes(p.name) && !p.name.startsWith('Ana ') && !p.name.startsWith('Dan '));
 
     const tags = ['All', 'Sales', 'Finance', 'Marketing', 'Admin', 'Events', 'PR', 'HR', 'Festivals'];
     const priorities = [

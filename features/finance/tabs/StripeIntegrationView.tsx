@@ -16,12 +16,20 @@ import {
 import { StudentDetailedProfile, Transaction } from '../../../types';
 import { SyncedPayment } from '../../../src/services/stripeService';
 import { useData } from '../../../contexts/DataContext';
-import { calculateAdjustedExpiryDate } from '../../../utils/dateUtils';
+import { calculateSubscriptionExpiryDate } from '../../../utils/dateUtils';
 import { Button } from '../../../components/UIComponents';
+import { ManualLinkModal } from '../components/ManualLinkModal';
+import { AddStudentModal } from '../../students/AddStudentModal';
+import { FilterModal, StripeFilters } from '../components/FilterModal';
 
 export const StripeIntegrationView: React.FC = () => {
-  const { students, updateStudent, vacationPeriods } = useData();
+  const { students, updateStudent, addStudent, vacationPeriods } = useData();
   const [syncingStudentId, setSyncingStudentId] = useState<string | null>(null);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [linkingCustomer, setLinkingCustomer] = useState<StripeCustomer | null>(null);
+  const [creatingCustomer, setCreatingCustomer] = useState<StripeCustomer | null>(null);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [filters, setFilters] = useState<StripeFilters>({ matchingStatus: 'all' });
   const [customers, setCustomers] = useState<StripeCustomer[]>([]);
   const [subscriptions, setSubscriptions] = useState<StripeSubscription[]>([]);
   const [payments, setPayments] = useState<StripePayment[]>([]);
@@ -52,59 +60,100 @@ export const StripeIntegrationView: React.FC = () => {
     loadStripeData();
   }, []);
 
-  const handleSyncPayments = async (student: StudentDetailedProfile, customer: StripeCustomer) => {
+  const handleSyncPayments = async (student: StudentDetailedProfile, customer: StripeCustomer, silent = false) => {
     setSyncingStudentId(student.id);
     try {
-      const syncedPayments = await syncStripePayments({
-        email: customer.email || undefined,
-        name: customer.name || undefined,
-
+      const { payments: syncedPayments, subscription: syncedSubscription } = await syncStripePayments({
+        email: student.email,
+        name: student.name,
+        phone: student.phone,
+        stripeCustomerId: customer.id,
       });
 
+      let updatedSubscription = { ...student.subscription };
+      let hasSubscriptionChanges = false;
 
-      if (syncedPayments && syncedPayments.length > 0) {
-        // Merge new payments with existing ones, avoiding duplicates by ID
-        const existingPaymentIds = new Set((student.paymentHistory || []).map(p => p.id));
-        const newPayments = syncedPayments.filter(sp => !existingPaymentIds.has(sp.id));
+      if (syncedSubscription) {
+        let newPlan = updatedSubscription.type;
+        if (syncedSubscription.planName?.includes('Bronze')) newPlan = 'Bronze';
+        else if (syncedSubscription.planName?.includes('Silver')) newPlan = 'Silver';
+        else if (syncedSubscription.planName?.includes('Gold')) newPlan = 'Gold';
+        else if (syncedSubscription.planName?.includes('Platinum')) newPlan = 'Platinum';
 
-        let updatedPaymentHistory: any[] = [...(student.paymentHistory || []), ...newPayments];
-        updatedPaymentHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-        // Recalculate subscription expiry based on the LATEST payment
-        const latestPayment = updatedPaymentHistory[0];
-        let newExpiryDateStr = student.subscription.expiryDate;
-        let newLastPaymentDate = student.subscription.lastPaymentDate;
-
-        if (latestPayment) {
-          const adjustedExpiryDate = calculateAdjustedExpiryDate(latestPayment.date, vacationPeriods);
-          newExpiryDateStr = adjustedExpiryDate.toISOString().split('T')[0];
-          newLastPaymentDate = latestPayment.date;
+        if (newPlan !== updatedSubscription.type) {
+          updatedSubscription.type = newPlan;
+          hasSubscriptionChanges = true;
         }
-
-        const updatedStudent: StudentDetailedProfile = {
-          ...student,
-          paymentHistory: updatedPaymentHistory,
-          subscription: {
-            ...student.subscription,
-            active: true,
-            lastPaymentDate: newLastPaymentDate,
-            expiryDate: newExpiryDateStr,
-          },
-        };
-
-
-        updateStudent(student.id, {
-          paymentHistory: updatedPaymentHistory,
-          subscription: {
-            ...student.subscription,
-            active: true,
-            lastPaymentDate: newLastPaymentDate,
-            expiryDate: newExpiryDateStr,
-          },
-        });
-
+        
+        if (syncedSubscription.status === 'active') {
+           updatedSubscription.active = true;
+           hasSubscriptionChanges = true;
+        }
       }
-      alert(`Sincronizare reușită pentru ${student.name}!`);
+
+      if (!syncedPayments || syncedPayments.length === 0) {
+        if (hasSubscriptionChanges) {
+          updateStudent(student.id, { subscription: updatedSubscription });
+          if (!silent) alert(`Abonamentul a fost actualizat pentru ${student.name}, dar nu există plăți noi.`);
+        } else {
+          if (!silent) alert(`Nicio plată de sincronizat pentru ${student.name}.`);
+        }
+        return;
+      }
+
+      const existingPaymentKeys = new Set((student.paymentHistory || []).map(p => {
+        const datePart = p.date.includes('T') ? p.date.split('T')[0] : p.date;
+        return `${datePart}_${p.amount}`;
+      }));
+      
+      const uniqueNewPaymentsMap = new Map<string, any>();
+      for (const sp of syncedPayments) {
+          const datePart = sp.date.includes('T') ? sp.date.split('T')[0] : sp.date;
+          const paymentKey = `${datePart}_${sp.amount}`;
+          if (!uniqueNewPaymentsMap.has(paymentKey) && !existingPaymentKeys.has(paymentKey)) {
+              uniqueNewPaymentsMap.set(paymentKey, sp);
+          }
+      }
+      const newPayments = Array.from(uniqueNewPaymentsMap.values());
+
+      if (newPayments.length === 0) {
+          if (hasSubscriptionChanges) {
+            updateStudent(student.id, { subscription: updatedSubscription });
+            if (!silent) alert(`Abonamentul a fost actualizat pentru ${student.name}. Istoricul plăților este la zi.`);
+          } else {
+            if (!silent) alert(`Nicio plată nouă de sincronizat pentru ${student.name}. Istoricul este la zi.`);
+          }
+          return; // Exit early
+      }
+
+      let updatedPaymentHistory: any[] = [...(student.paymentHistory || []), ...newPayments];
+      updatedPaymentHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      // Recalculate subscription expiry based on the LATEST payment
+      const latestPayment = updatedPaymentHistory[0];
+      let newExpiryDateStr = updatedSubscription.expiryDate;
+      let newLastPaymentDate = updatedSubscription.lastPaymentDate;
+
+      if (latestPayment) {
+        const adjustedExpiryDate = calculateSubscriptionExpiryDate(updatedPaymentHistory, updatedSubscription.expiryDate, vacationPeriods);
+        newExpiryDateStr = adjustedExpiryDate.toISOString().split('T')[0];
+        newLastPaymentDate = latestPayment.date;
+      }
+
+      updateStudent(student.id, {
+        paymentHistory: updatedPaymentHistory,
+        subscription: {
+          ...updatedSubscription,
+          active: true,
+          lastPaymentDate: newLastPaymentDate,
+          expiryDate: newExpiryDateStr,
+        },
+      });
+      
+      if (!silent) {
+        alert(`Sincronizare reușită pentru ${student.name}! ${newPayments.length} plăți noi adăugate.`);
+      }
+
     } catch (err: any) {
       console.error("Failed to sync payments:", err);
       alert(`Eroare la sincronizarea plăților pentru ${student.name}: ${err.message}`);
@@ -114,7 +163,13 @@ export const StripeIntegrationView: React.FC = () => {
   };
 
   const matchedData = customers.map(customer => {
-    const student = students.find(s => s.email.toLowerCase() === customer.email.toLowerCase());
+    // Prioritize matching by stored Stripe Customer ID
+    let student = students.find(s => s.stripeCustomerId === customer.id);
+    // Fallback to email matching if no direct link is found
+    if (!student) {
+      student = students.find(s => s.email.toLowerCase() === customer.email.toLowerCase());
+    }
+
     const customerSubs = subscriptions.filter(s => 
       typeof s.customer === 'string' ? s.customer === customer.id : s.customer.id === customer.id
     );
@@ -129,10 +184,59 @@ export const StripeIntegrationView: React.FC = () => {
     };
   });
 
-  const filteredData = matchedData.filter(item => 
-    item.customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredData = matchedData.filter(item => {
+    const searchMatch = 
+      item.customer.name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
+      item.customer.email?.toLowerCase()?.includes(searchTerm.toLowerCase());
+
+    const filterMatch = 
+      filters.matchingStatus === 'all' ||
+      (filters.matchingStatus === 'matched' && item.isMatched) ||
+      (filters.matchingStatus === 'unmatched' && !item.isMatched);
+
+    return searchMatch && filterMatch;
+  });
+
+  const handleLinkStudent = (studentId: string) => {
+    if (!linkingCustomer) return;
+
+    updateStudent(studentId, { stripeCustomerId: linkingCustomer.id });
+    
+    // Optional: Immediately try to sync payments for the newly linked student
+    const student = students.find(s => s.id === studentId);
+    if(student) {
+      handleSyncPayments(student, linkingCustomer);
+    }
+
+    setLinkingCustomer(null); // Close modal
+    alert('Asociere realizată cu succes!');
+  };
+
+  const handleCreateStudent = async (student: StudentDetailedProfile) => {
+    await addStudent(student);
+    setCreatingCustomer(null);
+    alert('Cont creat cu succes!');
+  };
+
+  const handleSyncAll = async () => {
+    setIsSyncingAll(true);
+    try {
+      const matchedStudents = matchedData.filter(item => item.isMatched && item.student && item.customer);
+
+      for (const item of matchedStudents) {
+        await handleSyncPayments(item.student!, item.customer, true);
+      }
+
+      alert(`Sincronizare în masă finalizată pentru ${matchedStudents.length} clienți!`);
+    } catch (error) {
+      console.error("Eroare la sincronizarea în masă Stripe:", error);
+      alert('A apărut o eroare în timpul sincronizării. Vă rugăm să reîncercați.');
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
+
+
 
   if (loading) {
     return (
@@ -167,7 +271,27 @@ export const StripeIntegrationView: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      <FilterModal 
+        isOpen={isFilterModalOpen}
+        onClose={() => setIsFilterModalOpen(false)}
+        filters={filters}
+        onApply={setFilters}
+      />
+      <ManualLinkModal 
+        isOpen={!!linkingCustomer}
+        onClose={() => setLinkingCustomer(null)}
+        students={students.filter(s => !s.stripeCustomerId)} // Show only unlinked students
+        onLink={handleLinkStudent}
+        stripeCustomerName={linkingCustomer?.name || ''}
+      />
+      <AddStudentModal
+        isOpen={!!creatingCustomer}
+        onClose={() => setCreatingCustomer(null)}
+        onSave={handleCreateStudent}
+        stripeCustomer={creatingCustomer}
+      />
+      <div className="space-y-6">
       {/* Stats Header */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-gray-900 p-6 rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm">
@@ -184,7 +308,7 @@ export const StripeIntegrationView: React.FC = () => {
             <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-emerald-600">
               <CreditCard size={20} />
             </div>
-            <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">Abonamente Active</span>
+            <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">Abonamente Stripe</span>
           </div>
           <div className="text-3xl font-black text-gray-900 dark:text-white">
             {subscriptions.filter(s => s.status === 'active').length}
@@ -216,11 +340,19 @@ export const StripeIntegrationView: React.FC = () => {
           />
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" className="gap-2 text-xs h-9">
+          <Button variant="secondary" className="gap-2 text-xs h-9" onClick={() => setIsFilterModalOpen(true)}>
             <Filter size={14} /> Filtrează
           </Button>
           <Button onClick={loadStripeData} variant="secondary" className="gap-2 text-xs h-9">
             <RefreshCw size={14} /> Refresh
+          </Button>
+          <Button variant="primary" className="gap-2 text-xs h-9 bg-emerald-500 hover:bg-emerald-600 text-white" onClick={handleSyncAll} disabled={isSyncingAll}>
+            {isSyncingAll ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <GitMerge size={14} />
+            )}
+            Sync Now
           </Button>
         </div>
       </div>
@@ -308,9 +440,14 @@ export const StripeIntegrationView: React.FC = () => {
                         </Button>
                       )}
                       {!item.isMatched && (
-                        <Button variant="secondary" className="h-8 px-3 text-[10px] gap-1">
-                          <LinkIcon size={12} /> Link Manual
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button variant="secondary" className="h-8 px-3 text-[10px] gap-1" onClick={() => setLinkingCustomer(item.customer)}>
+                            <LinkIcon size={12} /> Link Manual
+                          </Button>
+                          <Button variant="primary" className="h-8 px-3 text-[10px] gap-1" onClick={() => setCreatingCustomer(item.customer)}>
+                            <UserPlus size={12} /> Crează cont
+                          </Button>
+                        </div>
                       )}
                       <a 
                         href={`https://dashboard.stripe.com/customers/${item.customer.id}`}
@@ -348,5 +485,6 @@ export const StripeIntegrationView: React.FC = () => {
         </p>
       </div>
     </div>
+  </>
   );
 };

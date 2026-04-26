@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Building2, CreditCard as CreditCardIcon, Globe, Lock, Edit3, MessageCircle, FileText as FileTextIcon, RefreshCw, Link as LinkIcon, UserCog, Camera, Upload, Crop, Mail, Phone, User, CheckCircle, AlertTriangle, Key, RotateCw, Trash2 } from 'lucide-react';
+import { Building2, CreditCard as CreditCardIcon, Globe, Lock, Edit3, MessageCircle, FileText as FileTextIcon, RefreshCw, Link as LinkIcon, UserCog, Camera, Upload, Crop, Mail, Phone, User, CheckCircle, AlertTriangle, Key, RotateCw, Trash2, Clock, Sun } from 'lucide-react';
 import { COMPANY_DETAILS } from '../../constants';
 import { getSubscriptionColor } from '../../utils/themeUtils';
 import { Button, Input, Switch, Badge } from '../../components/UIComponents';
@@ -8,13 +8,16 @@ import { useData } from '../../contexts/DataContext';
 import { UserProfile } from '../../types';
 import { ImageCropper } from '../../components/shared/ImageCropper';
 import { normalizeRoPhone } from '../../utils/phoneUtils';
+import { VacationsTab } from './tabs/VacationsTab';
 
 interface SettingsViewProps {
     user?: UserProfile;
     onUpdateProfile?: (data: Partial<UserProfile>) => void;
+    isDarkMode: boolean;
+    toggleDarkMode: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateProfile }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateProfile, isDarkMode, toggleDarkMode }) => {
     const { subscriptionPlans, syncStripePlans, configureStripeKey, fetchStripeCustomers, refreshSubscriptionPlans, hardResetDatabase } = useData(); 
     const [activeTab, setActiveTab] = useState<'general' | 'subscriptions' | 'integrations' | 'security' | 'profile'>('general');
     const [isSyncingStripe, setIsSyncingStripe] = useState(false);
@@ -99,7 +102,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateProfil
     };
 
     const handleSaveStripeKey = async () => {
-        if (!stripeKey.startsWith('rk_') && !stripeKey.startsWith('sk_')) {
+        if (!stripeKey?.startsWith('rk_') && !stripeKey?.startsWith('sk_')) {
             alert("Cheia trebuie să înceapă cu 'rk_' (Restricted) sau 'sk_' (Secret).");
             return;
         }
@@ -168,6 +171,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateProfil
                         { id: 'subscriptions', label: 'Abonamente', icon: CreditCardIcon },
                         { id: 'integrations', label: 'Integrări', icon: Globe },
                         { id: 'security', label: 'Securitate', icon: Lock },
+                        { id: 'vacations', label: 'Vacanțe', icon: Clock },
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -199,6 +203,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateProfil
                                 <Input label="Reg. Com." defaultValue={COMPANY_DETAILS.regCom} />
                             </div>
                             <Input label="Adresă Sediu" defaultValue={COMPANY_DETAILS.address} />
+
+                            <div className="pt-8 border-t border-gray-100 dark:border-gray-800 mt-8">
+                                <h4 className="text-sm font-bold text-gray-500 mb-2 uppercase flex items-center gap-2"><Sun className="inline-block" size={16}/> Mod Afișaj</h4>
+                                <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50 flex justify-between items-center">
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-900 dark:text-white">Dark Mode</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Activează modul întunecat pentru interfață.</p>
+                                    </div>
+                                    <Switch checked={isDarkMode} onChange={toggleDarkMode} />
+                                </div>
+                            </div>
                             
                             <div className="pt-8 border-t border-gray-100 dark:border-gray-800 mt-8">
                                 <h4 className="text-sm font-bold text-red-600 mb-2 uppercase flex items-center gap-2"><AlertTriangle size={16}/> Zona de Pericol</h4>
@@ -343,6 +358,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateProfil
                              </div>
                          </div>
                     )}
+
+                    {activeTab === 'vacations' && <VacationsTab />}
 
                     {activeTab === 'subscriptions' && (
                         <div className="space-y-6">

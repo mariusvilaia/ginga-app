@@ -1,0 +1,196 @@
+./features/finance/tabs/StripeIntegrationView.tsx:78:        if (syncedSubscription.planName.includes('Bronze')) newPlan = 'Bronze';
+./features/finance/tabs/StripeIntegrationView.tsx:79:        else if (syncedSubscription.planName.includes('Silver')) newPlan = 'Silver';
+./features/finance/tabs/StripeIntegrationView.tsx:80:        else if (syncedSubscription.planName.includes('Gold')) newPlan = 'Gold';
+./features/finance/tabs/StripeIntegrationView.tsx:81:        else if (syncedSubscription.planName.includes('Platinum')) newPlan = 'Platinum';
+./features/finance/tabs/StripeIntegrationView.tsx:105:        const datePart = p.date.includes('T') ? p.date.split('T')[0] : p.date;
+./features/finance/tabs/StripeIntegrationView.tsx:111:          const datePart = sp.date.includes('T') ? sp.date.split('T')[0] : sp.date;
+./features/finance/tabs/StripeIntegrationView.tsx:189:      item.customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+./features/finance/tabs/StripeIntegrationView.tsx:190:      item.customer.email?.toLowerCase().includes(searchTerm.toLowerCase());
+./features/finance/tabs/TablePlView.tsx:20:        if (name.includes('Consumabile')) return 602;
+./features/finance/tabs/TablePlView.tsx:21:        if (name.includes('Marketing')) return 623;
+./features/finance/tabs/TablePlView.tsx:22:        if (name.includes('Software')) return 628;
+./features/finance/tabs/TablePlView.tsx:23:        if (name.includes('Salarii')) return 641;
+./features/finance/components/ManualLinkModal.tsx:20:    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+./features/finance/components/ManualLinkModal.tsx:21:    s.email.toLowerCase().includes(searchTerm.toLowerCase())
+./features/finance/FinanceView.tsx:69:                if (type.includes('bronze')) planKey = 'Bronze';
+./features/finance/FinanceView.tsx:70:                else if (type.includes('silver')) planKey = 'Silver';
+./features/finance/FinanceView.tsx:71:                else if (type.includes('gold')) planKey = 'Gold';
+./features/finance/FinanceView.tsx:72:                else if (type.includes('platinum')) planKey = 'Platinum';
+./features/finance/FinanceFlowChart.tsx:56:                if (stream.name.includes('Drop')) {
+./features/finance/FinanceFlowChart.tsx:61:                } else if (stream.name.includes('Evenimente')) {
+./features/finance/FinanceFlowChart.tsx:66:                } else if (sub.name.includes('Gold')) {
+./features/finance/FinanceFlowChart.tsx:70:                } else if (sub.name.includes('Silver')) {
+./features/finance/FinanceFlowChart.tsx:74:                } else if (sub.name.includes('Bronze')) {
+./features/finance/FinanceFlowChart.tsx:78:                } else if (sub.name.includes('Platinum')) {
+./features/finance/FinanceFlowChart.tsx:108:    const totalInstructorBudget = cogsStream?.subCategories?.find(c => c.name.includes('Instructori'))?.amount || 0;
+./features/finance/FinanceFlowChart.tsx:135:    const marketingTotal = data.expenseStreams.find(s => s.id === 'exp_2')?.subCategories?.find(c => c.name.includes('Marketing'))?.amount || (3500 * multiplier);
+./features/finance/FinanceFlowChart.tsx:136:    const softwareTotal = data.expenseStreams.find(s => s.id === 'exp_2')?.subCategories?.find(c => c.name.includes('Software'))?.amount || (1200 * multiplier);
+./features/finance/FinanceFlowChart.tsx:137:    const salaryTotal = data.expenseStreams.find(s => s.id === 'exp_2')?.subCategories?.find(c => c.name.includes('Salarii'))?.amount || (4050 * multiplier);
+./features/finance/FinanceFlowChart.tsx:444:                            {node.id.includes('inst') && getRoiBadge(node.id)}
+./features/groups/components/GroupAttendanceMatrix.tsx:67:        if (days.length > 0 && !days.includes(selectedDay)) {
+./features/groups/components/EditScheduleModal.tsx:51:            prev.includes(id) 
+./features/groups/components/EditScheduleModal.tsx:60:            .filter(i => selectedInstructorIds.includes(i.id))
+./features/groups/components/EditScheduleModal.tsx:146:                            const isSelected = selectedInstructorIds.includes(inst.id);
+./features/groups/components/EditScheduleVersionModal.tsx:38:            prev.includes(id) 
+./features/groups/components/EditScheduleVersionModal.tsx:47:            .filter(i => selectedInstructorIds.includes(i.id))
+./features/groups/components/EditScheduleVersionModal.tsx:159:                            const isSelected = selectedInstructorIds.includes(inst.id);
+./features/groups/components/GroupDetailPanel.tsx:44:            const matchName = instructors.find(i => (i.name || '').toLowerCase().includes(safeInstName));
+./features/groups/components/GroupDetailPanel.tsx:75:                    if (['present', 'absent', 'late'].includes(r.status)) totalRecords++;
+./features/groups/GroupsView.tsx:120:             const matchName = instructors.find(i => (i.name || '').toLowerCase().includes(safeInstName));
+./features/auth/OnboardingPage.tsx:66:      const newStyles = prev.styles.includes(style) 
+./features/auth/OnboardingPage.tsx:72:      if (!newStyles.includes(style)) {
+./features/auth/OnboardingPage.tsx:243:                  const isActive = formData.styles.includes(style);
+./features/instructor-attendance/InstructorDetail.tsx:32:                i.name.toLowerCase().includes(partialName.toLowerCase()) || 
+./features/instructor-attendance/InstructorDetail.tsx:33:                partialName.toLowerCase().includes((i.name || '').split(' ')[0].toLowerCase())
+./features/instructor-attendance/WeekOverview.tsx:46:                i.name.toLowerCase().includes(partialName.toLowerCase()) || 
+./features/instructor-attendance/WeekOverview.tsx:47:                partialName.toLowerCase().includes((i.name || '').split(' ')[0].toLowerCase())
+./features/instructor-attendance/MonthOverview.tsx:38:                i.name.toLowerCase().includes(partialName.toLowerCase()) || 
+./features/instructor-attendance/MonthOverview.tsx:39:                partialName.toLowerCase().includes((i.name || '').split(' ')[0].toLowerCase())
+./features/student/NotificationSettingsPage.tsx:277:                                {item.allowed.includes('push') && (
+./features/student/NotificationSettingsPage.tsx:291:                                {item.allowed.includes('email') && (
+./features/student/StudentSchedulePage.tsx:96:      const matchName = instructors.find(i => (i.name || '').toLowerCase().includes(safeInstName) || safeInstName.includes((i.name || '').toLowerCase()));
+./features/student/StudentSchedulePage.tsx:104:      return classId === 'c_tue_1930_salsa' || user.attendedClasses.includes(classId);
+./features/student/StudentSchedulePage.tsx:134:      if (l.includes('începător') || l.includes('incepator') || l.includes('beginner')) {
+./features/student/StudentSchedulePage.tsx:137:      if (l.includes('intermediar') || l.includes('improvers')) {
+./features/student/StudentSchedulePage.tsx:140:      if (l.includes('avansat') || l.includes('advanced')) {
+./features/student/StudentSchedulePage.tsx:151:      const isMille = cls.room.includes('Mille');
+./features/student/StudentAttendancePage.tsx:24:      const list = classes.filter(cls => user.attendedClasses.includes(cls.id));
+./features/student/StudentProfilePage.tsx:149:      if (type.includes('Gold')) return 'bg-[#FEF9C3] text-[#854D0E] border-[#FEF08A]';
+./features/student/StudentProfilePage.tsx:150:      if (type.includes('Silver')) return 'bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]';
+./features/student/StudentProfilePage.tsx:151:      if (type.includes('Bronze')) return 'bg-[#FFEDD5] text-[#9A3412] border-[#FED7AA]';
+./features/student/StudentDashboard.tsx:62:          const matchName = instructors.find(i => (i.name || '').toLowerCase().includes(safeInstName) || safeInstName.includes((i.name || '').toLowerCase()));
+./features/student/tabs/StudentHomeView.tsx:46:        const myGroups = groups.filter(g => enrolledGroupIds.includes(g.id) || enrolledGroupNames.includes(g.name));
+./features/student/tabs/StudentHomeView.tsx:153:                      <div className="flex justify-between items-start mb-6"><div><p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Abonament</p><span className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide border ${user.subscription.type.includes('Gold') ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-gray-100 text-gray-700 border-gray-200'}`}>{user.subscription.type}</span></div><div className="text-right"><p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Status</p><span className={`text-xs font-black ${user.subscription.active ? 'text-green-600' : 'text-red-500'}`}>{user.subscription.active ? 'ACTIV' : 'EXPIRAT'}</span></div></div>
+./features/attendance/AttendanceView.tsx:110:            const isNameMatch = gName === cName || gName.includes(cName) || cName.includes(gName);
+./features/attendance/components/AddVisitorModal.tsx:32:            normalizeText(s.email).includes(lower) ||
+./features/attendance/components/AddVisitorModal.tsx:33:            s.phone.includes(lower)
+./features/attendance/components/AttendanceKiosk.tsx:208:            if (result.message.includes('Expirat')) {
+./features/students/components/FaceQuizGame.tsx:34:            s.enrollments.some(e => instructorGroupIds.includes(e.groupId)) ||
+./features/students/components/schedule/ScheduleClassCard.tsx:20:    const isMille = cls.room.includes('Mille');
+./features/students/components/schedule/scheduleHelpers.ts:47:    if (l.includes('start')) {
+./features/students/components/schedule/scheduleHelpers.ts:50:    if (l.includes('începător') || l.includes('incepator') || l.includes('beginner')) {
+./features/students/components/schedule/scheduleHelpers.ts:53:    if (l.includes('intermediar') || l.includes('improvers')) {
+./features/students/components/schedule/scheduleHelpers.ts:56:    if (l.includes('avansat') || l.includes('advanced')) {
+./features/students/components/StudentDetailView.tsx:201:        if (plan.includes('bronze')) { maxSessions = 4; planValue = 189; }
+./features/students/components/StudentDetailView.tsx:202:        else if (plan.includes('silver')) { maxSessions = 8; planValue = 269; }
+./features/students/components/StudentDetailView.tsx:203:        else if (plan.includes('gold')) { maxSessions = 12; planValue = 349; }
+./features/students/components/StudentDetailView.tsx:204:        else if (plan.includes('platinum')) { maxSessions = 999; planValue = 449; }
+./features/students/components/StudentDetailView.tsx:313:                if (syncedSubscription.planName.includes('Bronze')) newPlan = 'Bronze';
+./features/students/components/StudentDetailView.tsx:314:                else if (syncedSubscription.planName.includes('Silver')) newPlan = 'Silver';
+./features/students/components/StudentDetailView.tsx:315:                else if (syncedSubscription.planName.includes('Gold')) newPlan = 'Gold';
+./features/students/components/StudentDetailView.tsx:316:                else if (syncedSubscription.planName.includes('Platinum')) newPlan = 'Platinum';
+./features/students/components/StudentDetailView.tsx:345:                const datePart = p.date.includes('T') ? p.date.split('T')[0] : p.date;
+./features/students/components/StudentDetailView.tsx:352:                    const datePart = p.date.includes('T') ? p.date.split('T')[0] : p.date;
+./features/students/components/NameQuizGame.tsx:36:            s.enrollments.some(e => instructorGroupIds.includes(e.groupId)) ||
+./features/students/StudentsView.tsx:64:              if (syncedSubscription.planName.includes('Bronze')) newPlan = 'Bronze';
+./features/students/StudentsView.tsx:65:              else if (syncedSubscription.planName.includes('Silver')) newPlan = 'Silver';
+./features/students/StudentsView.tsx:66:              else if (syncedSubscription.planName.includes('Gold')) newPlan = 'Gold';
+./features/students/StudentsView.tsx:67:              else if (syncedSubscription.planName.includes('Platinum')) newPlan = 'Platinum';
+./features/students/StudentsView.tsx:83:                  const datePart = p.date.includes('T') ? p.date.split('T')[0] : p.date;
+./features/students/StudentsView.tsx:90:                      const datePart = p.date.includes('T') ? p.date.split('T')[0] : p.date;
+./features/students/StudentsView.tsx:216:        const isPhoneMatch = (student.phone || '').includes(searchTerm);
+./features/students/StudentsView.tsx:240:        if (activeFilter === 'NOI' && !(student.joinDate || '').includes(new Date().toISOString().slice(0, 7))) return false;
+./features/students/StudentsView.tsx:249:        if (['GOLD', 'SILVER', 'BRONZE'].includes(activeFilter) && !(student.subscription?.type || '').toUpperCase().includes(activeFilter)) return false;
+./features/students/StudentsView.tsx:252:        if (['Salsa', 'Bachata', 'Kizomba'].includes(activeFilter)) {
+./features/students/StudentsView.tsx:268:            if (!columnFilters.subscription.some(plan => (student.subscription?.type || '').includes(plan))) return false;
+./features/students/StudentsView.tsx:281:            if (!columnFilters.days_left.includes(status)) return false;
+./features/students/StudentsView.tsx:295:            if (!columnFilters.status.includes(derivedStatus)) return false;
+./features/students/StudentsView.tsx:640:              if (colId === 'subscription') return (s.subscription?.type || '').includes(opt);
+./features/students/StudentsView.tsx:669:              const newValues = current.includes(opt) 
+./features/students/StudentsView.tsx:684:                      const isSelected = currentValues.includes(opt);
+./features/students/StudentsView.tsx:784:                      <p className="text-lg font-black text-green-600">+{students.filter(s => s.status === 'active' && (s.joinDate || '').includes(new Date().toISOString().slice(0, 7))).length}</p>
+./features/students/AddStudentModal.tsx:281:            normalizeText(s.email).includes(lower) ||
+./features/students/AddStudentModal.tsx:282:            s.phone.includes(lower)
+./features/students/StudentSchedulePage.tsx:36:      const matchName = instructors.find(i => (i.name || '').toLowerCase().includes(safeInstName) || safeInstName.includes((i.name || '').toLowerCase()));
+./features/leads/components/GroupScheduler.tsx:79:        return groups.filter(g => ids.includes(g.id));
+./features/leads/components/GroupScheduler.tsx:89:            if (targetGroupId && !initGroupIds.includes(targetGroupId)) {
+./features/leads/components/GroupScheduler.tsx:98:                    (lead.interest.preferredDays && lead.interest.preferredDays.includes(g.schedule.day))
+./features/leads/components/GroupScheduler.tsx:136:        const selectedGroups = groups.filter(g => formData.groupIds.includes(g.id));
+./features/leads/components/GroupScheduler.tsx:164:            const exists = prev.groupIds.includes(groupId);
+./features/leads/components/GroupScheduler.tsx:330:                                        const isSelected = formData.groupIds.includes(g.id);
+./features/leads/components/GroupScheduler.tsx:359:                                    {groups.filter(g => formData.groupIds.includes(g.id)).map(g => (
+./features/leads/components/LeadDetailView.tsx:305:                                                    const isActive = currentStyles.includes(style);
+./features/leads/LeadsView.tsx:470:              const matchesGlobal = smartSearch(searchTerm, l.name) || l.phone.includes(searchTerm);
+./features/leads/LeadsView.tsx:474:          if (columnFilters.gender.length > 0 && !columnFilters.gender.includes(l.gender || '')) return false;
+./features/leads/LeadsView.tsx:475:          if (columnFilters.source.length > 0 && !columnFilters.source.includes(l.source)) return false;
+./features/leads/LeadsView.tsx:476:          if (columnFilters.status.length > 0 && !columnFilters.status.includes(l.stage)) return false;
+./features/leads/LeadsView.tsx:479:              const primaryMatch = columnFilters.style.includes(l.interest.style);
+./features/leads/LeadsView.tsx:480:              const stylesMatch = l.interest.styles?.some(s => columnFilters.style.includes(s));
+./features/leads/LeadsView.tsx:483:                  return grp && columnFilters.style.includes(grp.style);
+./features/leads/LeadsView.tsx:488:          if (columnFilters.name && !l.name.toLowerCase().includes(columnFilters.name.toLowerCase())) return false;
+./features/leads/LeadsView.tsx:489:          if (columnFilters.phone && !l.phone.includes(columnFilters.phone)) return false;
+./features/leads/LeadsView.tsx:490:          if (columnFilters.notes && !l.notes.toLowerCase().includes(columnFilters.notes.toLowerCase())) return false;
+./features/leads/LeadsView.tsx:491:          if (columnFilters.date && !l.nextActionDate?.toLowerCase().includes(columnFilters.date.toLowerCase())) return false;
+./features/leads/LeadsView.tsx:495:                  return grp && columnFilters.groups.includes(grp.name);
+./features/leads/LeadsView.tsx:520:                          if (dStr.includes('azi')) return now.getTime();
+./features/leads/LeadsView.tsx:521:                          if (dStr.includes('ieri')) return new Date(now.setDate(now.getDate() - 1)).getTime();
+./features/leads/LeadsView.tsx:522:                          if (dStr.includes('maine') || dStr.includes('mâine')) return new Date(now.setDate(now.getDate() + 1)).getTime();
+./features/leads/LeadsView.tsx:694:      if (s.includes('website')) {
+./features/leads/LeadsView.tsx:696:      } else if (s.includes('facebook')) {
+./features/leads/LeadsView.tsx:698:      } else if (s.includes('instagram')) {
+./features/leads/LeadsView.tsx:700:      } else if (s.includes('referral')) {
+./features/leads/LeadsView.tsx:702:      } else if (s.includes('direct call')) {
+./features/leads/LeadsView.tsx:704:      } else if (s.includes('walk-in')) {
+./features/leads/LeadsView.tsx:706:      } else if (s.includes('whatsapp') || s.includes('phone')) {
+./features/leads/LeadsView.tsx:788:          const newIds = selectedIds.includes(groupId) 
+./features/leads/LeadsView.tsx:858:                                  const isSelected = selectedIds.includes(g.id);
+./features/leads/LeadsView.tsx:894:      const isTextFilter = ['name', 'phone', 'notes', 'date'].includes(colId);
+./features/leads/LeadsView.tsx:900:              const newValues = current.includes(opt) 
+./features/leads/LeadsView.tsx:944:                          const isSelected = (currentValues as string[]).includes(opt);
+./features/leads/LeadsView.tsx:952:                                  const stylesMatch = l.interest.styles?.includes(opt as DanceStyle);
+./features/leads/LeadsView.tsx:965:                              if (colId === 'day') return l.interest.preferredDays?.includes(opt);
+./features/leads/LeadsView.tsx:1400:                                    const isSelected = newLeadStyles.includes(style);
+./features/communications/MessagesModule.tsx:190:                            {msg.text.includes('Notă:') || msg.text.includes('Notă Internă') ? (
+./features/tasks/components/TaskEditModal.tsx:95:    ].filter(p => p.name && !['Ana', 'Dan'].includes(p.name) && !p.name.startsWith('Ana ') && !p.name.startsWith('Dan '));
+./features/tasks/TasksView.tsx:128:    ].filter(p => p.name && !['Ana', 'Dan'].includes(p.name) && !p.name.startsWith('Ana ') && !p.name.startsWith('Dan '));
+./features/instructors/InstructorsView.tsx:92:        ? groups.filter(g => g.instructors.some(i => i.id === selectedInstructor.id || (i.name && selectedInstructor.name && i.name.includes(selectedInstructor.name))))
+./features/instructors/InstructorsView.tsx:102:            else if (activeFilter === 'Risc Ridicat') matchesFilter = (i.riskScore || 0) > 20 || i.name.includes('Adelin');
+./features/instructors/InstructorsView.tsx:133:    const highRiskInstructor = instructors.find(i => i.name.includes('Adelin')) || instructors.find(i => i.riskScore > 50);
+./features/instructors/components/InstructorAttendanceTab.tsx:73:            return c.instructors.some(i => i.id === instructor.id || (i.name && instructor.name && i.name.includes(instructor.name)));
+./features/instructors/components/InstructorEditForm.tsx:65:            styles: prev.styles.includes(style) 
+./features/instructors/components/InstructorEditForm.tsx:74:            levels: prev.levels.includes(level) 
+./features/instructors/components/InstructorEditForm.tsx:160:                                    formData.styles.includes(style)
+./features/instructors/components/InstructorEditForm.tsx:179:                                    formData.levels.includes(level)
+./features/instructors/components/InstructorManagerGeneralTab.tsx:206:                            {Math.abs(delta)}{typeof value === 'string' && value.includes('%') ? '%' : ''}
+./features/instructors/components/InstructorManagerGeneralTab.tsx:212:                <p className="text-[9px] font-bold text-gray-400 uppercase">Media Școlii: <span className="text-gray-900 dark:text-white">{avg}{typeof value === 'string' && value.includes('%') ? '%' : ''}</span></p>
+./features/overview/OverviewView.tsx:141:          if (plan.includes('Bronze')) price = 189;
+./features/overview/OverviewView.tsx:142:          else if (plan.includes('Silver')) price = 269;
+./features/overview/OverviewView.tsx:143:          else if (plan.includes('Gold')) price = 349;
+./features/overview/OverviewView.tsx:144:          else if (plan.includes('Platinum')) price = 449;
+./features/instructor/InstructorDashboard.tsx:34:  const currentInstructorProfile = instructors.find(i => (i.name || '').toLowerCase().includes(userNamePart)) || instructors[0];
+./features/instructor/InstructorDashboard.tsx:37:      (inst.name || '').toLowerCase().includes((currentInstructorProfile?.name || '').split(' ')[0].toLowerCase())
+./contexts/DataContext.tsx:624:                  if (res && res.includes(oldDay)) res = res.replace(oldDay, newSchedule.day);
+./contexts/DataContext.tsx:625:                  if (newName && res && res.includes(oldName)) res = res.replace(oldName, targetName);
+./contexts/DataContext.tsx:632:                  } else if (newMainGroup.includes(oldDay) && newMainGroup.includes(groupData.style)) {
+./components/dashboard/DesktopDashboard.tsx:88:              if (syncedSubscription.planName.includes('Bronze')) newPlan = 'Bronze';
+./components/dashboard/DesktopDashboard.tsx:89:              else if (syncedSubscription.planName.includes('Silver')) newPlan = 'Silver';
+./components/dashboard/DesktopDashboard.tsx:90:              else if (syncedSubscription.planName.includes('Gold')) newPlan = 'Gold';
+./components/dashboard/DesktopDashboard.tsx:91:              else if (syncedSubscription.planName.includes('Platinum')) newPlan = 'Platinum';
+./utils/themeUtils.ts:17:  if (level === SkillLevel.START || l.includes('start')) {
+./utils/themeUtils.ts:29:  if (level === SkillLevel.BEGINNER || l.includes('începător') || l.includes('incepator') || l.includes('beginner')) {
+./utils/themeUtils.ts:41:  if (level === SkillLevel.INTERMEDIATE || level === SkillLevel.IMPROVERS || l.includes('intermediar') || l.includes('improvers')) {
+./utils/themeUtils.ts:53:  if (level === SkillLevel.ADVANCED || l.includes('avansat') || l.includes('advanced')) {
+./utils/themeUtils.ts:77:  if (t.includes('Bronze')) return 'bg-[#CD7F32]/10 text-[#CD7F32] border-[#CD7F32]/20';
+./utils/themeUtils.ts:78:  if (t.includes('Silver')) return 'bg-slate-200 text-slate-700 border-slate-300';
+./utils/themeUtils.ts:79:  if (t.includes('Gold')) return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+./utils/themeUtils.ts:80:  if (t.includes('Platinum')) return 'bg-slate-800 text-white border-slate-700';
+./utils/themeUtils.ts:81:  if (t.includes('Staff')) return 'bg-gray-900 text-white border-gray-700';
+./utils/themeUtils.ts:91:  if (levelOrName === SkillLevel.START || l.includes('start')) {
+./utils/themeUtils.ts:96:  if (l.includes('începător') || l.includes('incepator') || l.includes('beginner')) {
+./utils/themeUtils.ts:101:  if (l.includes('intermediar') || l.includes('intermediate') || l.includes('improvers')) {
+./utils/themeUtils.ts:106:  if (l.includes('avansat') || l.includes('advanced')) {
+./utils/genderUtils.ts:40:  if (lowerParts.some(part => maleMarkers.includes(part) || maleExceptions.includes(part))) {
+./utils/genderUtils.ts:48:      if (!surnamesEndingInA.includes(part)) {
+./utils/searchUtils.ts:35:    return queryParts.every(part => normalizedTarget.includes(part));
+./services/searchService.ts:49:        const phoneMatch = String(s.phone || '').replace(/\s/g, '').includes(q.replace(/\s/g, ''));
+./services/searchService.ts:50:        const subMatch = normalizeText(s.subscription?.type).includes(q);
+./services/searchService.ts:86:        if (smartSearch(query, g.name) || normalizeText(g.style).includes(q)) {
+./services/searchService.ts:100:        if (smartSearch(query, l.name) || smartSearch(query, l.email) || normalizeText(l.phone).includes(q)) {
+./services/searchService.ts:115:        if (smartSearch(query, t.title) || normalizeText(t.tag).includes(q)) {
+./services/searchService.ts:129:        if (smartSearch(query, c.name) || normalizeText(c.lastMessage).includes(q)) {
+./src/utils/themeUtils.ts:32:  if (type.includes('Bronze')) return 'bg-[#CD7F32]/10 text-[#CD7F32] border-[#CD7F32]/20';
+./src/utils/themeUtils.ts:33:  if (type.includes('Silver')) return 'bg-slate-200 text-slate-700 border-slate-300';
+./src/utils/themeUtils.ts:34:  if (type.includes('Gold')) return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+./src/utils/themeUtils.ts:35:  if (type.includes('Platinum')) return 'bg-slate-800 text-white border-slate-700';
+./server.ts:113:  if (!formattedPrivateKey.includes('-----BEGIN')) {
+./App.tsx:87:        const marius = MOCK_INSTRUCTORS_DATA.find(i => i.name.includes('Marius Vilaia'));

@@ -34,15 +34,30 @@ export const GroupAttendanceMatrix: React.FC<GroupAttendanceMatrixProps> = ({ gr
         'Duminică': 0, 'Luni': 1, 'Marți': 2, 'Miercuri': 3, 'Joi': 4, 'Vineri': 5, 'Sâmbătă': 6
     };
 
-    const targetDayIndex = RO_DAY_MAP[group.schedule.day];
-
-    // Filter days to only show the scheduled day of the week
+    // Filter days to only show the scheduled day of the week based on schedule versions
     const days = useMemo(() => {
         const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-        if (targetDayIndex === undefined) return allDays;
         
-        return allDays.filter(d => new Date(year, month, d).getDay() === targetDayIndex);
-    }, [year, month, daysInMonth, targetDayIndex]);
+        return allDays.filter(d => {
+            const date = new Date(year, month, d);
+            // Adjust for local timezone to avoid off-by-one errors when converting to ISO string
+            const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+            const dateStr = localDate.toISOString().split('T')[0];
+            
+            // Find the active schedule version for this date
+            const versions = group.scheduleVersions || [];
+            // Sort versions by startDate descending to find the most recent applicable version
+            const sortedVersions = [...versions].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+            
+            let activeVersion = sortedVersions.find(v => dateStr >= v.startDate && (!v.endDate || dateStr <= v.endDate));
+            
+            // Fallback to current schedule if no version found or if date is before the first version
+            const targetDay = activeVersion ? activeVersion.schedule.day : group.schedule.day;
+            const targetDayIndex = RO_DAY_MAP[targetDay];
+            
+            return date.getDay() === targetDayIndex;
+        });
+    }, [year, month, daysInMonth, group.scheduleVersions, group.schedule.day]);
 
     const monthName = new Intl.DateTimeFormat('ro-RO', { month: 'long', year: 'numeric' }).format(currentDate);
     const capitalizedMonthName = monthName.charAt(0).toUpperCase() + monthName.slice(1);
@@ -175,12 +190,33 @@ export const GroupAttendanceMatrix: React.FC<GroupAttendanceMatrixProps> = ({ gr
                 }
             }
         } else {
+            // Find matching enrollment for this class/group
+            const allEnrollments = [...(student.enrollments || []), ...(student.past_enrollments || [])];
+            const matchingEnrollment = allEnrollments.find(e => e.groupId === group.id || e.groupName === group.name);
+            
+            // Find the class session for this date
+            // We don't have direct access to classes here, so we'll just use the group id as a fallback or leave it undefined
+            // In a real scenario, we'd look up the specific class instance for this date
+            const sessionId = group.id; // Fallback to group ID if specific class ID isn't available
+
             if (forceStatus && forceStatus !== 'none') {
-                newHistory.push({ date: dateStr, className: group.name, status: forceStatus });
+                newHistory.push({ 
+                    date: dateStr, 
+                    className: group.name, 
+                    status: forceStatus,
+                    session_id: sessionId,
+                    enrollment_id: matchingEnrollment?.id
+                });
                 if (forceStatus === 'present') newStats.totalClasses = (newStats.totalClasses || 0) + 1;
             } else if (!forceStatus) {
                 // Default toggle behavior: Add Present
-                newHistory.push({ date: dateStr, className: group.name, status: 'present' });
+                newHistory.push({ 
+                    date: dateStr, 
+                    className: group.name, 
+                    status: 'present',
+                    session_id: sessionId,
+                    enrollment_id: matchingEnrollment?.id
+                });
                 newStats.totalClasses = (newStats.totalClasses || 0) + 1;
             }
         }
@@ -210,7 +246,17 @@ export const GroupAttendanceMatrix: React.FC<GroupAttendanceMatrixProps> = ({ gr
         const exists = newHistory.some(r => r.date === dateStr && r.className === group.name);
 
         if (!exists) {
-            newHistory.push({ date: dateStr, className: group.name, status: 'present' });
+            const allEnrollments = [...(student.enrollments || []), ...(student.past_enrollments || [])];
+            const matchingEnrollment = allEnrollments.find(e => e.groupId === group.id || e.groupName === group.name);
+            const sessionId = group.id; // Fallback to group ID
+
+            newHistory.push({ 
+                date: dateStr, 
+                className: group.name, 
+                status: 'present',
+                session_id: sessionId,
+                enrollment_id: matchingEnrollment?.id
+            });
             newStats.totalClasses = (newStats.totalClasses || 0) + 1;
             newHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             await updateStudent(student.id, { attendanceHistory: newHistory, stats: newStats });

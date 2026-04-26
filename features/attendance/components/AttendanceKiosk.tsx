@@ -14,7 +14,7 @@ interface AttendanceKioskProps {
 type ScanStatus = 'idle' | 'scanning' | 'success' | 'denied' | 'error';
 
 export const AttendanceKiosk: React.FC<AttendanceKioskProps> = ({ onClose }) => {
-    const { students, classes, performQrCheckIn } = useData();
+    const { students, classes, groups, performQrCheckIn } = useData();
     const [status, setStatus] = useState<ScanStatus>('idle');
     const [cameraError, setCameraError] = useState<string | null>(null);
     const [isCameraReady, setIsCameraReady] = useState(false);
@@ -36,16 +36,52 @@ export const AttendanceKiosk: React.FC<AttendanceKioskProps> = ({ onClose }) => 
     // Auto-detect current/next class
     const activeClass = useMemo(() => {
         const now = new Date();
+        const dayNames = ['Duminică', 'Luni', 'Marți', 'Miercuri', 'Joi', 'Vineri', 'Sâmbătă'];
+        const dayName = dayNames[now.getDay()];
+        const todayStr = now.toISOString().split('T')[0];
+
+        // 1. Get all active groups for today from the master schedule
+        const groupsToday = groups.filter(g => g.schedule.day === dayName && g.status === 'active');
+        
+        // 2. Map groups to virtual class objects
+        const classesFromGroups: any[] = groupsToday.map(g => ({
+            id: g.id,
+            title: g.name,
+            instructors: g.instructors,
+            time: g.schedule.time,
+            duration: g.schedule.duration,
+            room: g.schedule.room,
+            level: g.level,
+            style: g.style,
+            date: todayStr,
+            occupancy: { current: g.stats.enrolledCount, max: g.stats.maxCapacity }
+        }));
+
+        // 3. Merge with specific class instances for today
+        const specificClasses = classes.filter(c => c.date === todayStr);
+        const allToday = [...classesFromGroups];
+        specificClasses.forEach(sc => {
+            const index = allToday.findIndex(fc => fc.time === sc.time && fc.room === sc.room);
+            if (index !== -1) {
+                allToday[index] = { ...allToday[index], ...sc };
+            } else {
+                allToday.push(sc);
+            }
+        });
+
         const hour = now.getHours();
         const min = now.getMinutes();
         const nowMin = hour * 60 + min;
         
-        return classes.find(c => {
+        const sorted = allToday.sort((a, b) => a.time.localeCompare(b.time));
+
+        return sorted.find(c => {
             const [cHour, cMin] = c.time.split(':').map(Number);
             const classStartMin = cHour * 60 + cMin;
+            // Match if within 60 mins of start time
             return Math.abs(classStartMin - nowMin) <= 60;
-        }) || classes[0];
-    }, [classes]);
+        }) || sorted[0];
+    }, [classes, groups]);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -169,7 +205,7 @@ export const AttendanceKiosk: React.FC<AttendanceKioskProps> = ({ onClose }) => 
             });
         } else {
             setStatus('denied');
-            if (result.message.includes('Expirat')) {
+            if (result.message?.includes('Expirat')) {
                 playSound('expired');
             } else {
                 playSound('error');

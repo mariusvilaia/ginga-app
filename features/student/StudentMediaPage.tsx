@@ -9,7 +9,6 @@ interface StudentMediaPageProps {
 
 const MOCK_VIDEOS = [
   { id: 1, title: 'Bachata Routine - Week 4', date: '12 Nov 2024', duration: '1:45', thumbnail: 'https://images.unsplash.com/photo-1545389336-cf090694435e?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80', views: 24 },
-  { id: 2, title: 'Salsa Shines Practice', date: '05 Nov 2024', duration: '0:55', thumbnail: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80', views: 12 },
   { id: 3, title: 'Workshop Highlights', date: '28 Oct 2024', duration: '2:10', thumbnail: 'https://images.unsplash.com/photo-1504609773096-104ff2c73ba4?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80', views: 56 },
 ];
 

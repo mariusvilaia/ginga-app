@@ -6,6 +6,7 @@ import { StudentDetailedProfile, DanceStyle, SkillLevel } from '../../../types';
 import { Button, Input, Switch } from '../../../components/UIComponents';
 import { useData } from '../../../contexts/DataContext';
 import { normalizeRoPhone } from '../../../utils/phoneUtils';
+import { guessGenderByName, guessRoleByGender } from '../../../utils/genderUtils';
 
 interface EnrollmentItem {
     groupId: string;
@@ -18,14 +19,7 @@ interface EnrollmentItem {
 
 const SUBSCRIPTION_LIMITS: Record<string, number> = { 'Bronze': 1, 'Silver': 2, 'Gold': 3, 'Platinum': 99, 'Staff': 99 };
 
-// Helper to guess role
-const guessDanceRole = (name: string): 'Leader' | 'Follower' => {
-    const n = name.trim().toLowerCase();
-    const maleExceptions = ['luca', 'toma', 'mircea', 'minnea', 'horea', 'horia', 'sasha', 'minea', 'dragos', 'marius', 'cosmin']; 
-    if (maleExceptions.some(ex => n.includes(ex))) return 'Leader';
-    if (n.endsWith('a') || n.endsWith('ca')) return 'Follower';
-    return 'Leader';
-};
+// Helper to guess role - REMOVED in favor of centralized utility
 
 interface StudentEditFormProps {
     student: StudentDetailedProfile;
@@ -40,7 +34,7 @@ export const StudentEditForm: React.FC<StudentEditFormProps> = ({ student, onSav
     const names = student.name.split(' ').filter(n => n.trim().length > 0);
     const [formData, setFormData] = useState({
         firstName: names[0] || '',
-        middleName: names.length >= 3 ? names.slice(1, names.length - 1).join(' ') : '',
+        middleName: student.middleName || (names.length >= 3 ? names.slice(1, names.length - 1).join(' ') : ''),
         lastName: names.length >= 2 ? names[names.length - 1] : '',
         nickname: student.nickname || '',
         email: student.email,
@@ -51,6 +45,7 @@ export const StudentEditForm: React.FC<StudentEditFormProps> = ({ student, onSav
         linkedin: student.socialMedia?.linkedin || '',
         danceRole: (student.gender === 'M' ? 'Leader' : 'Follower') as 'Leader' | 'Follower'
     });
+    const [isRoleManuallySet, setIsRoleManuallySet] = useState(false);
 
     const [isLoyalty, setIsLoyalty] = useState(!!student.subscription.autoPayEnabled);
     const [paymentDate, setPaymentDate] = useState<string>(student.subscription.lastPaymentDate || new Date().toISOString().split('T')[0]);
@@ -108,10 +103,19 @@ export const StudentEditForm: React.FC<StudentEditFormProps> = ({ student, onSav
 
     const handleChange = (field: string, value: string) => {
         setFormData(prev => ({ ...prev, [field]: value }));
-        if (field === 'firstName') {
-            const role = guessDanceRole(value);
-            setFormData(prev => ({ ...prev, danceRole: role }));
-            setPickerRole(role);
+        if (field === 'firstName' || field === 'middleName' || field === 'lastName') {
+            const fullName = [
+                field === 'firstName' ? value : formData.firstName,
+                field === 'middleName' ? value : formData.middleName,
+                field === 'lastName' ? value : formData.lastName
+            ].filter(Boolean).join(' ');
+            
+            if (!isRoleManuallySet) {
+                const gender = guessGenderByName(fullName);
+                const role = guessRoleByGender(gender);
+                setFormData(prev => ({ ...prev, danceRole: role }));
+                setPickerRole(role);
+            }
         }
         if (errors[field]) setErrors(prev => { const n = { ...prev }; delete n[field]; return n; });
     };
@@ -158,6 +162,7 @@ export const StudentEditForm: React.FC<StudentEditFormProps> = ({ student, onSav
         onSave({
             ...student,
             name: [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(' '),
+            middleName: formData.middleName,
             nickname: formData.nickname,
             email: formData.email,
             phone: normalizeRoPhone(formData.phone),
@@ -198,6 +203,9 @@ export const StudentEditForm: React.FC<StudentEditFormProps> = ({ student, onSav
                             onClick={() => {
                                 setFormData(p => ({...p, danceRole: role as any}));
                                 setPickerRole(role as any);
+                                setIsRoleManuallySet(true);
+                                // Update all existing enrollments to this role
+                                setEnrollments(prev => prev.map(enr => ({ ...enr, role: role as any })));
                             }} 
                             className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${formData.danceRole === role ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500'}`}
                         >
@@ -209,11 +217,13 @@ export const StudentEditForm: React.FC<StudentEditFormProps> = ({ student, onSav
             
             {/* 1. Personal Info */}
             <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <Input label="Prenume" value={formData.firstName} onChange={(e) => handleChange('firstName', e.target.value)} error={errors.firstName} />
+                    <Input label="Al doilea prenume" value={formData.middleName} onChange={(e) => handleChange('middleName', e.target.value)} />
                     <Input label="Nume" value={formData.lastName} onChange={(e) => handleChange('lastName', e.target.value)} error={errors.lastName} />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Input label="Poreclă" value={formData.nickname} onChange={(e) => handleChange('nickname', e.target.value)} />
                     <Input label="Email" value={formData.email} onChange={(e) => handleChange('email', e.target.value)} />
                     <Input 
                         label="Telefon" 
@@ -334,17 +344,6 @@ export const StudentEditForm: React.FC<StudentEditFormProps> = ({ student, onSav
                     <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-3">
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Adaugă Rapid</p>
-                            <div className="flex bg-white dark:bg-gray-900 p-0.5 rounded-lg border border-gray-200 dark:border-gray-600">
-                                {['Leader', 'Follower'].map(r => (
-                                    <button 
-                                        key={r}
-                                        onClick={() => setPickerRole(r as any)}
-                                        className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-all ${pickerRole === r ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900'}`}
-                                    >
-                                        {r.charAt(0)}
-                                    </button>
-                                ))}
-                            </div>
                         </div>
 
                         {/* Style Tabs */}

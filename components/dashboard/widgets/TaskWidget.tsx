@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { ListTodo, Check, Plus, X } from 'lucide-react';
 import { AdminTask } from '../../../types';
+import { useLanguage } from '../../../contexts/LanguageContext';
 
 interface TaskWidgetProps {
     tasks: AdminTask[];
@@ -10,6 +11,7 @@ interface TaskWidgetProps {
 }
 
 export const TaskWidget: React.FC<TaskWidgetProps> = ({ tasks, onAddTask, onTaskClick }) => {
+   const { t } = useLanguage();
    const [isAdding, setIsAdding] = useState(false);
    const [newTaskTitle, setNewTaskTitle] = useState('');
 
@@ -24,8 +26,8 @@ export const TaskWidget: React.FC<TaskWidgetProps> = ({ tasks, onAddTask, onTask
    return (
        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-4 h-full flex flex-col">
           <div className="flex justify-between items-center mb-4 shrink-0">
-             <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2"><ListTodo size={18}/> Task Manager</h3>
-             <button onClick={() => setIsAdding(!isAdding)} className="text-xs font-bold text-blue-600 hover:underline">+ Add</button>
+             <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2"><ListTodo size={18}/> {t('dashboard.tasks')}</h3>
+             <button onClick={() => setIsAdding(!isAdding)} className="text-xs font-bold text-blue-600 hover:underline">+ {t('general.add')}</button>
           </div>
           
           <div className="flex-1 overflow-y-auto no-scrollbar space-y-3">
@@ -67,8 +69,8 @@ export const TaskWidget: React.FC<TaskWidgetProps> = ({ tasks, onAddTask, onTask
                 </div>
              )) : (
                  <div className="text-center py-8 text-gray-400 text-sm">
-                     <p>Nu ai niciun task.</p>
-                     <button onClick={() => setIsAdding(true)} className="text-blue-500 font-bold mt-2">Adaugă unul</button>
+                     <p>{t('dashboard.noTasks')}</p>
+                     <button onClick={() => setIsAdding(true)} className="text-blue-500 font-bold mt-2">{t('dashboard.addTask')}</button>
                  </div>
              )}
           </div>

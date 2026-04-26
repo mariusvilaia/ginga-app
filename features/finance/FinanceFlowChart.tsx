@@ -105,7 +105,7 @@ export const FinanceFlowChart: React.FC<FinanceFlowChartProps> = ({ data, multip
 
     // 3. COGS NODES
     const cogsStream = data.expenseStreams.find(s => s.type === 'cogs');
-    const totalInstructorBudget = cogsStream?.subCategories?.find(c => c.name.includes('Instructori'))?.amount || 0;
+    const totalInstructorBudget = cogsStream?.subCategories?.find(c => c.name?.includes('Instructori'))?.amount || 0;
     
     // Normalize Instructor Data
     const rawInstructorTotal = instructors.reduce((acc, curr) => acc + (curr.contract?.totalToPay || 0), 0);
@@ -132,9 +132,9 @@ export const FinanceFlowChart: React.FC<FinanceFlowChartProps> = ({ data, multip
     const totalCogs = allCogsNodes.reduce((acc, curr) => acc + curr.value, 0);
 
     // 4. OPEX NODES
-    const marketingTotal = data.expenseStreams.find(s => s.id === 'exp_2')?.subCategories?.find(c => c.name.includes('Marketing'))?.amount || (3500 * multiplier);
-    const softwareTotal = data.expenseStreams.find(s => s.id === 'exp_2')?.subCategories?.find(c => c.name.includes('Software'))?.amount || (1200 * multiplier);
-    const salaryTotal = data.expenseStreams.find(s => s.id === 'exp_2')?.subCategories?.find(c => c.name.includes('Salarii'))?.amount || (4050 * multiplier);
+    const marketingTotal = data.expenseStreams.find(s => s.id === 'exp_2')?.subCategories?.find(c => c.name?.includes('Marketing'))?.amount || (3500 * multiplier);
+    const softwareTotal = data.expenseStreams.find(s => s.id === 'exp_2')?.subCategories?.find(c => c.name?.includes('Software'))?.amount || (1200 * multiplier);
+    const salaryTotal = data.expenseStreams.find(s => s.id === 'exp_2')?.subCategories?.find(c => c.name?.includes('Salarii'))?.amount || (4050 * multiplier);
     const otherTotal = Math.max(0, data.expenses - marketingTotal - softwareTotal - salaryTotal);
 
     const opexNodes = [

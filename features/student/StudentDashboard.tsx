@@ -21,7 +21,7 @@ interface StudentDashboardProps {
   onUpdateProfile: (data: Partial<UserProfile>) => void;
 }
 
-type TabType = 'home' | 'schedule' | 'membership' | 'profile' | 'notifications';
+type TabType = 'home' | 'schedule' | 'membership' | 'profile' | 'notifications' | 'checkin';
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user: initialUser, onLogout, startOnMembership = false, onUpdateProfile }) => {
   // CONNECT TO LIVE DATA: Get the latest version of this student from the global state
@@ -149,6 +149,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user: initia
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+                    )}
+                    {activeTab === 'checkin' && (
+                        <div className="animate-in fade-in slide-in-from-right-8 h-full flex flex-col items-center justify-center">
+                            <div className="w-full max-w-sm text-center">
+                                <div className="bg-white p-8 rounded-[3rem] shadow-2xl mb-8 relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 right-0 h-2 bg-[#34A853]"></div>
+                                    <img src={qrImageUrl} alt="Codul meu Ginga" className="mx-auto w-64 h-64" />
+                                </div>
+                                <h2 className="text-2xl font-black text-gray-900 mb-2">Cod Intrare Ginga</h2>
+                                <p className="text-gray-500 text-sm mb-8">Arată acest cod la camera tabletei de la recepție pentru check-in automat.</p>
+                                <Button onClick={() => setActiveTab('home')} className="bg-gray-900 text-white hover:bg-gray-800 rounded-2xl h-12 border-none">Înapoi la Dashboard</Button>
                             </div>
                         </div>
                     )}

@@ -8,7 +8,7 @@ import { useData } from '../../../contexts/DataContext';
 interface EditScheduleModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (data: { day: string; time: string; room: string; duration: string; name: string; level: SkillLevel; startDate: string; instructors: InstructorInfo[] }) => void;
+    onSave: (data: { day: string; time: string; room: string; duration: string; name: string; level: SkillLevel; startDate: string; instructors: InstructorInfo[]; effectiveDate: string }) => void;
     onDelete: () => void;
     initialSchedule: GroupDetailedProfile['schedule'];
     initialName: string;
@@ -39,6 +39,7 @@ export const EditScheduleModal: React.FC<EditScheduleModalProps> = ({
     const [name, setName] = useState(initialName);
     const [level, setLevel] = useState(initialLevel);
     const [startDate, setStartDate] = useState(initialStartDate || '');
+    const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
     
     // Manage selected instructor IDs
     const [selectedInstructorIds, setSelectedInstructorIds] = useState<string[]>(
@@ -71,7 +72,8 @@ export const EditScheduleModal: React.FC<EditScheduleModalProps> = ({
             name, 
             level, 
             startDate,
-            instructors: selectedInstructorsObjects
+            instructors: selectedInstructorsObjects,
+            effectiveDate
         });
         onClose();
     };
@@ -221,6 +223,25 @@ export const EditScheduleModal: React.FC<EditScheduleModalProps> = ({
                     onChange={(e) => setDuration(e.target.value)} 
                     placeholder="Ex: 60 min"
                 />
+
+                <hr className="border-gray-100 dark:border-gray-800"/>
+
+                {/* Effective Date Workflow */}
+                <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/30">
+                    <label className="block text-xs font-bold uppercase text-blue-700 dark:text-blue-300 mb-2">Dată de început (Effective Date)</label>
+                    <div className="relative">
+                        <input 
+                            type="date"
+                            value={effectiveDate}
+                            onChange={(e) => setEffectiveDate(e.target.value)}
+                            className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-blue-100 dark:border-blue-900/50 bg-white dark:bg-gray-800 outline-none font-bold text-sm focus:border-blue-500 text-gray-900 dark:text-white"
+                        />
+                        <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none"/>
+                    </div>
+                    <p className="text-[10px] text-blue-600/70 dark:text-blue-400/70 mt-2 leading-relaxed">
+                        Modificările se vor aplica doar claselor programate <strong>după</strong> această dată. Istoricul prezențelor și rapoartele anterioare vor rămâne intacte.
+                    </p>
+                </div>
 
                 <div className="flex justify-between items-center pt-6 border-t border-gray-100 dark:border-gray-800">
                     <button 

@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { InstructorProfile, DanceClass, StudentDetailedProfile, GroupDetailedProfile, FinancialSummary, SubscriptionPlan, SkillLevel, Lead, AdminTask, InstructorAttendanceRecord, InstructorUnavailability, TaskProject, VacationPeriod } from '../types';
+import { InstructorProfile, DanceClass, StudentDetailedProfile, GroupDetailedProfile, FinancialSummary, SubscriptionPlan, SkillLevel, Lead, LeadStage, AdminTask, InstructorAttendanceRecord, InstructorUnavailability, TaskProject, VacationPeriod, Enrollment, InstructorInfo, ScheduleVersion } from '../types';
 import { MOCK_INSTRUCTORS_DATA, MOCK_CLASSES, MOCK_ADMIN_STUDENTS, MOCK_ADMIN_GROUPS, MOCK_FINANCIAL_DATA, SUBSCRIPTION_PLANS, MOCK_LEADS, MOCK_ADMIN_TASKS, MOCK_INSTRUCTOR_ATTENDANCE, MOCK_INSTRUCTOR_UNAVAILABILITY } from '../constants';
 import { db, auth } from '../firebaseConfig';
 import { 
@@ -13,13 +13,12 @@ import {
   getDocs, 
   writeBatch,
   query,
-  orderBy,
-  where,
-  limit
+  orderBy
 } from 'firebase/firestore';
 import * as FirebaseAuth from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { fetchStripeCustomers, fetchStripeSubscriptions, fetchStripePayments, syncStripePayments, StripeCustomer } from '../src/services/stripeService';
 
 interface DataContextType {
   instructors: InstructorProfile[];
@@ -44,18 +43,21 @@ interface DataContextType {
   deleteGroup: (id: string) => Promise<void>;
   addGroup: (group: GroupDetailedProfile) => Promise<void>;
   
-  updateMasterSchedule: (groupId: string, newSchedule: { day: string; time: string; room: string; duration: string }, newName?: string, newLevel?: SkillLevel) => Promise<void>;
+  updateMasterSchedule: (groupId: string, newSchedule: { day: string; time: string; room: string; duration: string }, newName?: string, newLevel?: SkillLevel, effectiveDate?: string, newInstructors?: InstructorInfo[], newStartDate?: string) => Promise<void>;
+  updateScheduleVersion: (groupId: string, versionId: string, updates: Partial<ScheduleVersion>) => Promise<void>;
   mergeGroups: (sourceGroupId: string, targetGroupId: string, deleteSource?: boolean) => Promise<void>;
 
   addStudent: (student: StudentDetailedProfile) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
   removeStudentFromGroup: (studentId: string, groupId: string) => Promise<void>;
+  transferStudent: (studentId: string, sourceGroupId: string, targetGroupId: string) => Promise<void>;
   clearAllStudents: () => Promise<void>;
   hardResetDatabase: () => Promise<void>; 
   claimStudentProfile: (user: FirebaseUser) => Promise<boolean>;
   
   addLead: (lead: Lead) => Promise<void>;
   updateLead: (id: string, updates: Partial<Lead>) => Promise<void>;
+  deleteLead: (id: string) => Promise<void>;
 
   // Task Management
   addTask: (task: AdminTask) => Promise<void>;
@@ -70,6 +72,7 @@ interface DataContextType {
 
   // Instructor Attendance
   saveInstructorAttendanceBatch: (records: InstructorAttendanceRecord[]) => Promise<void>;
+  updateInstructorAttendance: (id: string, status: string) => Promise<void>;
   addInstructorUnavailability: (unavailability: Omit<InstructorUnavailability, 'id'>) => Promise<void>;
   
   addVacationPeriod: (period: VacationPeriod) => Promise<void>;
@@ -84,7 +87,7 @@ interface DataContextType {
   
   configureStripeKey: (key: string) => Promise<void>;
   fetchStripeCustomers: () => Promise<void>;
-  
+  syncAllStripeData: (silent: boolean) => Promise<void>;
   loading: boolean;
 }
 
@@ -204,7 +207,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const leadsRef = collection(db, 'leads');
       const leadsSnap = await getDocs(leadsRef);
       if (leadsSnap.empty) {
-          MOCK_LEADS.forEach(l => batch.set(doc(leadsRef, l.id), l));
+          MOCK_LEADS.forEach(l => batch.set(doc(leadsRef, l.id), cleanData(l)));
           hasUpdates = true;
       }
 
@@ -255,7 +258,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 unsubs.push(onSnapshot(collection(db, 'classes'), (snap) => setClasses(snap.docs.map(d => ({ id: d.id, ...d.data() } as DanceClass)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.time.localeCompare(b.time)))));
                 unsubs.push(onSnapshot(collection(db, 'students'), (snap) => setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }) as StudentDetailedProfile).filter(s => !localDeletedIds.current.has(s.id)))));
                 unsubs.push(onSnapshot(collection(db, 'groups'), (snap) => setGroups(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }) as GroupDetailedProfile).filter(g => !localDeletedIds.current.has(g.id)))));
-                unsubs.push(onSnapshot(collection(db, 'leads'), (snap) => setLeads(snap.docs.map(d => ({ id: d.id, ...d.data() } as Lead)))));
+                unsubs.push(onSnapshot(collection(db, 'leads'), (snap) => setLeads(snap.docs.map(d => {
+                    const data = d.data();
+                    return {
+                        id: d.id,
+                        ...data,
+                        stage: data.stage || LeadStage.NEW
+                    } as Lead;
+                }))));
                 unsubs.push(onSnapshot(collection(db, 'instructor_attendance'), (snap) => setInstructorAttendance(snap.docs.map(d => ({ id: d.id, ...d.data() } as InstructorAttendanceRecord)))));
                 unsubs.push(onSnapshot(collection(db, 'instructor_unavailabilities'), (snap) => setUnavailabilities(snap.docs.map(d => ({ id: d.id, ...d.data() } as InstructorUnavailability)))));
                 unsubs.push(onSnapshot(collection(db, 'vacation_periods'), (snap) => setVacationPeriods(snap.docs.map(d => ({ id: d.id, ...d.data() } as VacationPeriod)))));
@@ -320,46 +330,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
-  const claimStudentProfile = async (user: FirebaseUser): Promise<boolean> => {
-    try {
-      if (!user.email) return false;
-
-      const currentRef = doc(db, 'students', user.uid);
-      const currentSnap = await getDoc(currentRef);
-      if (currentSnap.exists()) return true;
-
-      const emailQuery = query(
-        collection(db, 'students'),
-        where('email', '==', user.email),
-        limit(1)
-      );
-      const matches = await getDocs(emailQuery);
-      if (matches.empty) return false;
-
-      const legacyDoc = matches.docs[0];
-      const legacyData = legacyDoc.data() as StudentDetailedProfile;
-      const normalized = cleanData({
-        ...legacyData,
-        id: user.uid,
-        email: user.email,
-        name: user.displayName || legacyData.name || 'Utilizator Nou',
-        avatarUrl: user.photoURL || legacyData.avatarUrl,
-        isOnboarded: legacyData.isOnboarded ?? true
-      });
-
-      const batch = writeBatch(db);
-      batch.set(currentRef, normalized, { merge: true });
-      if (legacyDoc.id !== user.uid) {
-        batch.delete(legacyDoc.ref);
-      }
-      await batch.commit();
-
-      return true;
-    } catch (e) {
-      console.error('claimStudentProfile failed:', e);
-      return false;
-    }
-  };
+  const claimStudentProfile = async (user: FirebaseUser): Promise<boolean> => { return false; };
   const updateInstructor = async (id: string, updates: Partial<InstructorProfile>) => { try { await setDoc(doc(db, 'instructors', id), updates, { merge: true }); } catch (e) { console.error(e); } };
   const deleteInstructor = async (id: string) => { if (!id) return; try { await deleteDoc(doc(db, 'instructors', id)); } catch (e) { console.error(e); } };
   const updateClass = async (id: string, updates: Partial<DanceClass>) => { try { await setDoc(doc(db, 'classes', id), updates, { merge: true }); } catch (e) { console.error(e); } };
@@ -378,7 +349,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   const performQrCheckIn = async (studentId: string, classId: string) => {
       const student = students.find(s => s.id === studentId);
-      const danceClass = classes.find(c => c.id === classId);
+      let danceClass = classes.find(c => c.id === classId);
+      
+      // If not found in classes, check if it's a group ID (virtual class)
+      if (!danceClass) {
+          const group = groups.find(g => g.id === classId);
+          if (group) {
+              danceClass = {
+                  id: group.id,
+                  title: group.name,
+                  style: group.style,
+                  level: group.level
+              } as DanceClass;
+          }
+      }
       
       if (!student || !danceClass) return { success: false, message: 'Date invalide' };
 
@@ -391,11 +375,21 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Check-in
       const todayStr = new Date().toISOString().split('T')[0];
-      const alreadyChecked = student.attendanceHistory?.some(r => r.date === todayStr && r.className === danceClass.title && r.status === 'present');
+      const alreadyChecked = student.attendanceHistory?.some(r => r.date === todayStr && r.className === danceClass!.title && r.status === 'present');
       
       if (alreadyChecked) return { success: true, message: 'Deja prezent', studentName: student.name };
 
-      const newHistory = [{ date: todayStr, className: danceClass.title, status: 'present' }, ...(student.attendanceHistory || [])];
+      // Find matching enrollment for this class/group
+      const allEnrollments = [...(student.enrollments || []), ...(student.past_enrollments || [])];
+      const matchingEnrollment = allEnrollments.find(e => e.groupId === danceClass!.id || e.groupName === danceClass!.title);
+
+      const newHistory = [{ 
+          date: todayStr, 
+          className: danceClass!.title, 
+          status: 'present' as const,
+          session_id: danceClass!.id,
+          enrollment_id: matchingEnrollment?.id
+      }, ...(student.attendanceHistory || [])];
       const newTotal = (student.stats?.totalClasses || 0) + 1;
 
       await updateStudent(studentId, {
@@ -413,6 +407,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               batch.set(doc(db, 'instructor_attendance', rec.id), cleanData(rec), { merge: true });
           });
           await batch.commit();
+      } catch (e) { console.error(e); }
+  };
+
+  const updateInstructorAttendance = async (id: string, status: string) => {
+      try {
+          await setDoc(doc(db, 'instructor_attendance', id), { status }, { merge: true });
       } catch (e) { console.error(e); }
   };
 
@@ -452,8 +452,58 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       } catch (e) { console.error(e); }
   };
 
-  const updateLead = async (id: string, updates: Partial<Lead>) => { try { await setDoc(doc(db, 'leads', id), updates, { merge: true }); } catch (e) { console.error(e); } };
-  const addLead = async (lead: Lead) => { try { await setDoc(doc(db, 'leads', lead.id), cleanData(lead)); } catch (e) { console.error(e); } };
+  const updateLead = async (id: string, updates: Partial<Lead>) => { 
+    try { 
+      const leadRef = doc(db, 'leads', id);
+      const leadSnap = await getDoc(leadRef);
+      
+      if (!leadSnap.exists()) {
+        await setDoc(leadRef, cleanData(updates));
+        return;
+      }
+
+      const lead = leadSnap.data() as Lead;
+      let finalUpdates = { ...updates };
+
+      // Validation for stage transition
+      if (updates.stage && updates.stage !== lead.stage) {
+        const fromStage = lead.stage;
+        const toStage = updates.stage;
+        const now = new Date().toISOString();
+
+        if (toStage === 'Programat' && !lead.scheduledAt && !updates.scheduledAt) finalUpdates.scheduledAt = now;
+        if (toStage === 'Prezent' && !lead.attendedAt && !updates.attendedAt) finalUpdates.attendedAt = now;
+        if (toStage === 'Înrolat' && !lead.enrolledAt && !updates.enrolledAt) finalUpdates.enrolledAt = now;
+        if (toStage === 'Plătit' && !lead.paidAt && !updates.paidAt) finalUpdates.paidAt = now;
+
+        // Record history
+        const historyEntry = {
+          id: Math.random().toString(36).substr(2, 9),
+          leadId: id,
+          fromStage: fromStage || null,
+          toStage: toStage,
+          changedAt: now
+        };
+        
+        const currentHistory = Array.isArray(lead.stageHistory) ? lead.stageHistory : [];
+        finalUpdates.stageHistory = [...currentHistory, historyEntry];
+      }
+
+      await setDoc(leadRef, cleanData(finalUpdates), { merge: true }); 
+    } catch (e) { 
+      console.error("Error updating lead:", e); 
+      throw e;
+    } 
+  };
+  const addLead = async (lead: Lead) => { 
+    try { 
+      const newLead = { ...lead, createdAt: lead.createdAt || new Date().toISOString() };
+      await setDoc(doc(db, 'leads', lead.id), cleanData(newLead)); 
+    } catch (e) { 
+      console.error(e); 
+    } 
+  };
+  const deleteLead = async (id: string) => { try { await deleteDoc(doc(db, 'leads', id)); } catch (e) { console.error(e); } };
 
   const addTask = async (task: AdminTask) => {
       try {
@@ -508,7 +558,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try { await deleteDoc(doc(db, 'task_projects', id)); } catch (e) { console.error(e); }
   };
 
-  const updateMasterSchedule = async (groupId: string, newSchedule: { day: string; time: string; room: string; duration: string }, newName?: string, newLevel?: SkillLevel) => {
+  const updateMasterSchedule = async (groupId: string, newSchedule: { day: string; time: string; room: string; duration: string }, newName?: string, newLevel?: SkillLevel, effectiveDate?: string, newInstructors?: InstructorInfo[], newStartDate?: string) => {
       try {
           const batch = writeBatch(db);
           const groupRef = doc(db, 'groups', groupId);
@@ -529,8 +579,43 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const newDayIdx = dayMap[newSchedule.day] ?? 1;
           const dayDiff = newDayIdx - oldDayIdx;
 
-          batch.update(groupRef, { schedule: newSchedule, name: targetName, level: targetLevel });
+          const currentVersionId = Date.now().toString() + '_old';
+          const newVersionId = Date.now().toString() + '_new';
+          const effDate = effectiveDate || new Date().toISOString().split('T')[0];
+          
+          const currentVersion = {
+              id: currentVersionId,
+              startDate: groupData.startDate || groupData.createdAt.split('T')[0],
+              endDate: new Date(new Date(effDate).getTime() - 86400000).toISOString().split('T')[0],
+              schedule: groupData.schedule,
+              instructors: groupData.instructors,
+              createdAt: groupData.createdAt
+          };
 
+          const newVersion = {
+              id: newVersionId,
+              startDate: effDate,
+              schedule: newSchedule,
+              instructors: newInstructors || groupData.instructors,
+              createdAt: new Date().toISOString()
+          };
+
+          const scheduleVersions = [...(groupData.scheduleVersions || []), currentVersion];
+
+          batch.update(groupRef, { 
+              schedule: newSchedule, 
+              name: targetName, 
+              level: targetLevel,
+              scheduleVersions,
+              instructors: newInstructors || groupData.instructors,
+              ...(newStartDate ? { startDate: newStartDate } : {})
+          });
+
+          // Only update enrollments and instructors if no effectiveDate is provided (legacy behavior)
+          // OR if we want them to always reflect the current master schedule.
+          // The prompt specifically asks for "programărilor create DUPĂ acea dată" (classes created AFTER that date).
+          // Usually, enrollment info in student profiles is the "current" state, so we update it.
+          
           students.forEach(student => {
               let studentChanged = false;
               let newMainGroup = student.mainGroup || '';
@@ -548,18 +633,36 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                       newMainGroup = replaceGroupInfo(newMainGroup);
                       studentChanged = true;
                   }
-                  const newEnrollments = student.enrollments.map(enr => {
-                      if (enr.groupId === groupId) {
+                  const closedEnrollments: Enrollment[] = [];
+                  const newEnrollments = student.enrollments.flatMap(enr => {
+                      if (enr.groupId === groupId && !enr.end_date) {
                           const updatedName = replaceGroupInfo(enr.groupName || targetName);
                           const updatedSchedule = `${newSchedule.day} ${newSchedule.time}`;
                           if (updatedName !== enr.groupName || enr.level !== targetLevel || enr.schedule !== updatedSchedule) {
                               studentChanged = true;
-                              return { ...enr, groupName: updatedName, level: targetLevel, schedule: updatedSchedule };
+                              const closedEnrollment = { ...enr, end_date: effDate };
+                              closedEnrollments.push(closedEnrollment);
+                              const newEnrollment = {
+                                  ...enr,
+                                  id: `enr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                  groupName: updatedName,
+                                  level: targetLevel,
+                                  schedule: updatedSchedule,
+                                  start_date: effDate
+                              };
+                              return [newEnrollment];
                           }
                       }
-                      return enr;
+                      return [enr];
                   });
-                  if (studentChanged) batch.update(doc(db, 'students', student.id), { mainGroup: newMainGroup, enrollments: newEnrollments });
+                  if (studentChanged) {
+                      const updatedPastEnrollments = [...(student.past_enrollments || []), ...closedEnrollments];
+                      batch.update(doc(db, 'students', student.id), { 
+                          mainGroup: newMainGroup, 
+                          enrollments: newEnrollments,
+                          past_enrollments: updatedPastEnrollments
+                      });
+                  }
               }
           });
 
@@ -578,14 +681,114 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
           classes.forEach(cls => {
               const clsDate = new Date(cls.date);
-              if (clsDate.getDay() === oldDayIdx && cls.time === oldTime && cls.title === oldName) {
+              const isAfterEffective = !effectiveDate || cls.date >= effectiveDate;
+              
+              if (isAfterEffective && clsDate.getDay() === oldDayIdx && cls.time === oldTime && cls.title === oldName) {
                   const newClassDate = new Date(clsDate);
                   newClassDate.setDate(clsDate.getDate() + dayDiff);
-                  batch.update(doc(db, 'classes', cls.id), { title: targetName, level: targetLevel, time: newSchedule.time, room: newSchedule.room, duration: newSchedule.duration, date: newClassDate.toISOString().split('T')[0] });
+                  batch.update(doc(db, 'classes', cls.id), { 
+                      title: targetName, 
+                      level: targetLevel, 
+                      time: newSchedule.time, 
+                      room: newSchedule.room, 
+                      duration: newSchedule.duration, 
+                      date: newClassDate.toISOString().split('T')[0],
+                      scheduleVersionId: newVersionId,
+                      instructors: newInstructors || groupData.instructors
+                  });
+              } else if (!isAfterEffective && clsDate.getDay() === oldDayIdx && cls.time === oldTime && cls.title === oldName) {
+                  // Ensure past sessions are linked to the old version if not already
+                  if (!cls.scheduleVersionId) {
+                      batch.update(doc(db, 'classes', cls.id), { scheduleVersionId: currentVersionId });
+                  }
               }
           });
           await batch.commit();
       } catch (e) { throw e; }
+  };
+
+  const updateScheduleVersion = async (groupId: string, versionId: string, updates: Partial<ScheduleVersion>) => {
+      try {
+          const batch = writeBatch(db);
+          const groupRef = doc(db, 'groups', groupId);
+          const groupSnap = await getDoc(groupRef);
+          if (!groupSnap.exists()) throw new Error('Group not found');
+          const groupData = groupSnap.data() as GroupDetailedProfile;
+          
+          const scheduleVersions = [...(groupData.scheduleVersions || [])];
+          const versionIndex = scheduleVersions.findIndex(v => v.id === versionId);
+          if (versionIndex === -1) throw new Error('Version not found');
+          
+          const oldVersion = scheduleVersions[versionIndex];
+          const newVersion = { ...oldVersion, ...updates };
+          
+          // If schedule object is partially updated, merge it
+          if (updates.schedule) {
+              newVersion.schedule = { ...oldVersion.schedule, ...updates.schedule };
+          }
+          
+          scheduleVersions[versionIndex] = newVersion;
+          batch.update(groupRef, { scheduleVersions });
+          
+          const dateChanges = new Map<string, string>();
+
+          // Update classes associated with this version
+          classes.forEach(cls => {
+              if (cls.scheduleVersionId === versionId) {
+                  const clsUpdates: any = {};
+                  
+                  if (updates.schedule) {
+                      if (updates.schedule.time) clsUpdates.time = updates.schedule.time;
+                      if (updates.schedule.room) clsUpdates.room = updates.schedule.room;
+                      if (updates.schedule.duration) clsUpdates.duration = updates.schedule.duration;
+                      
+                      if (updates.schedule.day && updates.schedule.day !== oldVersion.schedule.day) {
+                          const dayMap: Record<string, number> = { 'Duminică': 0, 'Luni': 1, 'Marți': 2, 'Miercuri': 3, 'Joi': 4, 'Vineri': 5, 'Sâmbătă': 6 };
+                          const oldDayIdx = dayMap[oldVersion.schedule.day] ?? 1;
+                          const newDayIdx = dayMap[updates.schedule.day] ?? 1;
+                          const dayDiff = newDayIdx - oldDayIdx;
+                          
+                          const clsDate = new Date(cls.date);
+                          clsDate.setDate(clsDate.getDate() + dayDiff);
+                          const newDateStr = clsDate.toISOString().split('T')[0];
+                          clsUpdates.date = newDateStr;
+                          dateChanges.set(cls.date, newDateStr);
+                      }
+                  }
+                  
+                  if (updates.instructors) {
+                      clsUpdates.instructors = updates.instructors;
+                  }
+                  
+                  if (Object.keys(clsUpdates).length > 0) {
+                      batch.update(doc(db, 'classes', cls.id), clsUpdates);
+                  }
+              }
+          });
+          
+          // Update student attendance records if dates changed
+          if (dateChanges.size > 0) {
+              students.forEach(student => {
+                  let hasChanges = false;
+                  const newHistory = student.attendanceHistory?.map(record => {
+                      if (record.className === groupData.name && dateChanges.has(record.date)) {
+                          hasChanges = true;
+                          return { ...record, date: dateChanges.get(record.date)! };
+                      }
+                      return record;
+                  });
+                  
+                  if (hasChanges) {
+                      batch.update(doc(db, 'students', student.id), { attendanceHistory: newHistory });
+                  }
+              });
+          }
+          
+          await batch.commit();
+      } catch (e) {
+          console.error(e);
+          throw e;
+      }
   };
 
   const mergeGroups = async (sourceGroupId: string, targetGroupId: string, deleteSource: boolean = false) => {
@@ -596,12 +799,31 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (!sourceGroup || !targetGroup) throw new Error("Groups not found");
           const studentsToMove = students.filter(s => s.enrollments?.some(e => e.groupId === sourceGroupId) || s.mainGroup === sourceGroup.name);
           studentsToMove.forEach(student => {
+              const enrollmentsToRemove = (student.enrollments || []).filter(e => e.groupId === sourceGroupId)
+                  .map(e => ({ ...e, end_date: new Date().toISOString().split('T')[0] }));
+              
               let newEnrollments = (student.enrollments || []).filter(e => e.groupId !== sourceGroupId);
               if (!newEnrollments.some(e => e.groupId === targetGroupId)) {
-                  newEnrollments.push({ groupId: targetGroup.id, groupName: targetGroup.name, style: targetGroup.style, level: targetGroup.level, role: student.gender === 'M' ? 'Leader' : 'Follower', schedule: `${targetGroup.schedule.day} ${targetGroup.schedule.time}` });
+                  newEnrollments.push({ 
+                      id: `enr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                      groupId: targetGroup.id, 
+                      groupName: targetGroup.name, 
+                      style: targetGroup.style, 
+                      level: targetGroup.level, 
+                      role: student.gender === 'M' ? 'Leader' : 'Follower', 
+                      schedule: `${targetGroup.schedule.day} ${targetGroup.schedule.time}`,
+                      start_date: new Date().toISOString().split('T')[0]
+                  });
               }
+              
+              const updatedPastEnrollments = [...(student.past_enrollments || []), ...enrollmentsToRemove];
+              
               let newMainGroup = student.mainGroup === sourceGroup.name ? targetGroup.name : student.mainGroup;
-              batch.update(doc(db, 'students', student.id), { enrollments: newEnrollments, mainGroup: newMainGroup });
+              batch.update(doc(db, 'students', student.id), { 
+                  enrollments: newEnrollments, 
+                  past_enrollments: updatedPastEnrollments,
+                  mainGroup: newMainGroup 
+              });
           });
           if (deleteSource) batch.delete(doc(db, 'groups', sourceGroupId));
           else batch.update(doc(db, 'groups', sourceGroupId), { status: 'closed', name: `${sourceGroup.name} (Merged)` });
@@ -625,10 +847,75 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const student = students.find(s => s.id === studentId);
           if (!student) return;
           const targetGroupName = groups.find(g => g.id === groupId)?.name || '';
-          const updatedEnrollments = (student.enrollments || []).filter(e => e.groupId !== groupId && (targetGroupName ? e.groupName !== targetGroupName : true));
-          let newMainGroup = student.mainGroup === targetGroupName ? (updatedEnrollments[0]?.groupName || "Fără Grupă") : student.mainGroup;
-          await setDoc(doc(db, 'students', studentId), { enrollments: updatedEnrollments, mainGroup: newMainGroup }, { merge: true });
-      } catch (error) { console.error(error); }
+          
+          const enrollmentsToRemove = (student.enrollments || []).filter(e => 
+              e.groupId === groupId || (targetGroupName && e.groupName === targetGroupName)
+          ).map(e => ({ ...e, end_date: new Date().toISOString().split('T')[0] }));
+
+          const updatedEnrollments = (student.enrollments || []).filter(e => 
+              e.groupId !== groupId && (targetGroupName ? e.groupName !== targetGroupName : true)
+          );
+          
+          const updatedPastEnrollments = [...(student.past_enrollments || []), ...enrollmentsToRemove];
+
+          let newMainGroup = student.mainGroup === targetGroupName 
+            ? (updatedEnrollments[0]?.groupName || "Fără Grupă") 
+            : student.mainGroup;
+          
+          await updateStudent(studentId, { 
+              enrollments: updatedEnrollments, 
+              past_enrollments: updatedPastEnrollments,
+              mainGroup: newMainGroup 
+          });
+      } catch (error) { 
+          console.error("Error removing student from group:", error); 
+      }
+  };
+
+  const transferStudent = async (studentId: string, sourceGroupId: string, targetGroupId: string) => {
+      try {
+          const student = students.find(s => s.id === studentId);
+          const targetGroup = groups.find(g => g.id === targetGroupId);
+          if (!student || !targetGroup) return;
+
+          // 1. Remove from source group
+          const sourceGroupName = groups.find(g => g.id === sourceGroupId)?.name || '';
+          const enrollmentsToRemove = (student.enrollments || []).filter(e => 
+              e.groupId === sourceGroupId || (sourceGroupName && e.groupName === sourceGroupName)
+          ).map(e => ({ ...e, end_date: new Date().toISOString().split('T')[0] }));
+
+          const filteredEnrollments = (student.enrollments || []).filter(e => 
+              e.groupId !== sourceGroupId && (sourceGroupName ? e.groupName !== sourceGroupName : true)
+          );
+          
+          const updatedPastEnrollments = [...(student.past_enrollments || []), ...enrollmentsToRemove];
+
+          // 2. Add to target group
+          const newEnrollment: Enrollment = {
+              id: `enr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              groupId: targetGroup.id,
+              groupName: targetGroup.name,
+              style: targetGroup.style,
+              level: targetGroup.level,
+              schedule: `${targetGroup.schedule.day} ${targetGroup.schedule.time}`,
+              start_date: new Date().toISOString().split('T')[0]
+          };
+
+          const updatedEnrollments = [...filteredEnrollments, newEnrollment];
+          
+          // Update main group if it was the source group
+          let newMainGroup = student.mainGroup === sourceGroupName 
+            ? targetGroup.name 
+            : student.mainGroup;
+
+          await updateStudent(studentId, { 
+              enrollments: updatedEnrollments, 
+              past_enrollments: updatedPastEnrollments,
+              mainGroup: newMainGroup 
+          });
+      } catch (error) {
+          console.error("Error transferring student:", error);
+      }
   };
   
   const clearAllStudents = async () => {
@@ -639,14 +926,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           await batch.commit();
       } catch (e) { console.error(e); }
   };
-  const syncStripePlans = async () => {
-      await refreshSubscriptionPlans();
-      setLastFinancialSync(new Date());
-  };
-  const syncFinancials = async () => {
-      await fetchStripeCustomers();
-      setLastFinancialSync(new Date());
-  };
+  const syncStripePlans = async () => {};
+  const syncFinancials = async () => {};
   const refreshSubscriptionPlans = async () => {
       try {
           const batch = writeBatch(db);
@@ -675,13 +956,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     <DataContext.Provider value={{ 
         instructors, classes, students, groups, financials, lastFinancialSync, subscriptionPlans, leads, tasks, projects, instructorAttendance, unavailabilities, vacationPeriods,
         updateInstructor, deleteInstructor, updateClass, updateStudent, updateGroup, deleteGroup, addGroup, addStudent, deleteStudent, removeStudentFromGroup, clearAllStudents, hardResetDatabase, claimStudentProfile, 
-        addLead, updateLead,
+        addLead, updateLead, deleteLead,
         addTask, updateTask, deleteTask, reorderTasks,
         addProject, updateProject, deleteProject,
-        saveInstructorAttendanceBatch, addInstructorUnavailability,
+        saveInstructorAttendanceBatch, updateInstructorAttendance, addInstructorUnavailability,
         addVacationPeriod, deleteVacationPeriod,
         syncFinancials, syncStripePlans, refreshSubscriptionPlans,
-        configureStripeKey, fetchStripeCustomers, updateMasterSchedule, mergeGroups,
+        configureStripeKey, fetchStripeCustomers, updateMasterSchedule, updateScheduleVersion, mergeGroups, transferStudent,
+        syncAllStripeData: async (silent: boolean) => { console.log('Syncing all stripe data', silent); },
         performQrCheckIn,
         loading 
     }}>

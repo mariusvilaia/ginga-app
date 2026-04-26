@@ -43,7 +43,7 @@ export const WeekOverview: React.FC<WeekOverviewProps> = ({
         
         const findInstructorIdByName = (partialName: string) => {
             const match = instructors.find(i => 
-                i.name.toLowerCase().includes(partialName.toLowerCase()) || 
+                i.name?.toLowerCase().includes(partialName.toLowerCase()) || 
                 partialName.toLowerCase().includes((i.name || '').split(' ')[0].toLowerCase())
             );
             return match ? match.id : null;

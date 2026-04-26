@@ -102,10 +102,10 @@ export const searchGlobal = (query: string, data: SearchContext): Record<SearchR
                 id: l.id,
                 type: 'lead',
                 title: l.name,
-                subtitle: `Lead • ${l.status}`,
+                subtitle: `Lead • ${l.stage}`,
                 route: 'leads',
                 avatarUrl: l.avatarUrl,
-                metadata: { status: l.status }
+                metadata: { status: l.stage }
             });
         }
     });

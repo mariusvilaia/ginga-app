@@ -101,7 +101,7 @@ export const StudentSchedulePage: React.FC<StudentSchedulePageProps> = ({ user, 
   };
 
   const isEnrolled = (classId: string) => {
-      return classId === 'c_tue_1930_salsa' || user.attendedClasses.includes(classId);
+      return classId === 'c_tue_1930_salsa' || user.attendedClasses?.includes(classId);
   };
 
   const isFull = (cls: DanceClass) => {

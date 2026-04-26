@@ -1,12 +1,13 @@
 
 import React, { useState } from 'react';
-import { Bell, Calendar, Users, ChevronRight, ChevronLeft, LayoutDashboard, Wallet, QrCode, LogOut, Clock, Menu } from 'lucide-react';
+import { Bell, Calendar, Users, ChevronRight, ChevronLeft, LayoutDashboard, Wallet, QrCode, LogOut, Clock, Menu, Globe } from 'lucide-react';
 import { UserProfile, DanceClass } from '../../types';
 import { Card, Button } from '../../components/UIComponents';
 import { InstructorCheckInPage } from './InstructorCheckInPage';
 import { GingaLogo } from '../../components/shared/GingaLogo';
 import { useData } from '../../contexts/DataContext';
 import { InstructorScheduleView, InstructorCheckInList, InstructorFinanceView } from './components/InstructorDashboardWidgets';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 interface InstructorDashboardProps {
   user: UserProfile;
@@ -16,11 +17,16 @@ interface InstructorDashboardProps {
 type TabType = 'dashboard' | 'schedule' | 'checkin' | 'finance';
 
 export const InstructorDashboard: React.FC<InstructorDashboardProps> = ({ user, onLogout }) => {
+  const { language, setLanguage, t } = useLanguage();
   const { instructors, classes } = useData(); 
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [viewState, setViewState] = useState<{ mode: 'list' | 'class_checkin', class?: DanceClass }>({ mode: 'list' });
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeCheckInQr, setActiveCheckInQr] = useState<string | null>(null);
+
+  const toggleLanguage = () => {
+      setLanguage(language === 'ro' ? 'en' : 'ro');
+  };
 
   const todayDate = new Date().toISOString().split('T')[0];
   const userNamePart = (user.name || '').split(' ')[0].toLowerCase();
@@ -59,7 +65,19 @@ export const InstructorDashboard: React.FC<InstructorDashboardProps> = ({ user, 
                     <button key={item.id} onClick={() => setActiveTab(item.id as any)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === item.id ? 'bg-gray-50 text-gray-900 shadow-sm border border-gray-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'} ${isSidebarCollapsed ? 'justify-center px-2' : ''}`} title={isSidebarCollapsed ? item.label : ''}><item.icon size={18} className={activeTab === item.id ? 'text-[#E53935]' : ''}/>{!isSidebarCollapsed && <span className="whitespace-nowrap overflow-hidden">{item.label}</span>}</button>
                 ))}
             </nav>
-            <div className="p-4 border-t border-gray-100 bg-gray-50/50 mt-auto"><div className={`flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}><img src={currentInstructorProfile.avatarUrl} className="w-10 h-10 rounded-full bg-gray-100 object-cover border border-gray-200" />{!isSidebarCollapsed && <div className="flex-1 min-w-0"><p className="text-sm font-bold text-gray-900 truncate">{currentInstructorProfile.name}</p><p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Instructor</p></div>}{!isSidebarCollapsed && <button onClick={onLogout} className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-gray-100 rounded-lg"><LogOut size={18} /></button>}</div></div>
+            <div className="p-4 border-t border-gray-100 bg-gray-50/50 mt-auto">
+                <div className={`flex items-center gap-3 mb-4 ${isSidebarCollapsed ? 'justify-center' : 'px-2'}`}>
+                    <button 
+                        onClick={toggleLanguage}
+                        className="flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors"
+                        title={t(language === 'ro' ? 'lang.en' : 'lang.ro')}
+                    >
+                        <Globe size={16} />
+                        {!isSidebarCollapsed && <span>{language.toUpperCase()}</span>}
+                    </button>
+                </div>
+                <div className={`flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}><img src={currentInstructorProfile.avatarUrl} className="w-10 h-10 rounded-full bg-gray-100 object-cover border border-gray-200" />{!isSidebarCollapsed && <div className="flex-1 min-w-0"><p className="text-sm font-bold text-gray-900 truncate">{currentInstructorProfile.name}</p><p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider truncate">Instructor</p></div>}{!isSidebarCollapsed && <button onClick={onLogout} className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-gray-100 rounded-lg"><LogOut size={18} /></button>}</div>
+            </div>
         </aside>
 
         <div className="flex-1 flex flex-col h-screen overflow-hidden">

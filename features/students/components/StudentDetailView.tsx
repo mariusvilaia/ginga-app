@@ -1,15 +1,17 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ArrowLeft, Edit2, MessageCircle, Instagram, Facebook, Linkedin, Trash2, Camera, Upload, Crop, TrendingUp, RefreshCw, Calendar, XCircle, CheckCircle, AlertTriangle, Clock, Wallet, Activity, ShieldAlert, BarChart3, User, Archive, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Edit2, MessageCircle, Instagram, Facebook, Linkedin, Trash2, Camera, Upload, Crop, TrendingUp, RefreshCw, Calendar, XCircle, CheckCircle, AlertTriangle, Clock, Wallet, Activity, ShieldAlert, BarChart3, User, Archive, RotateCcw, Loader2 } from 'lucide-react';
 import { StudentDetailedProfile, AdminNote } from '../../../types';
 import { Button, Modal, Badge } from '../../../components/UIComponents';
 import { getSubscriptionColor } from '../../../utils/themeUtils';
-import { calculateAdjustedExpiryDate } from '../../../utils/dateUtils';
+import { calculateSubscriptionExpiryDate } from '../../../utils/dateUtils';
+import { syncStripePayments } from '../../../src/services/stripeService';
 import { ImageCropper } from '../../../components/shared/ImageCropper';
 import { StudentOverviewTab, StudentAttendanceTab, StudentPaymentsTab, StudentNotesTab } from './StudentDetailTabs';
 import { StudentEditForm } from './StudentEditForm';
 import { AddPaymentModal } from './AddPaymentModal';
 import { useData } from '../../../contexts/DataContext';
+import { useLanguage } from '../../../contexts/LanguageContext';
 
 interface StudentDetailViewProps {
     studentId: string;
@@ -22,8 +24,8 @@ interface StudentDetailViewProps {
 }
 
 export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId, onClose, onSave, onDelete, onAddTask, onUpdateProfileImage, onNavigateToGroup }) => {
-    
-    const { students, classes, removeStudentFromGroup, vacationPeriods } = useData();
+    const { t } = useLanguage();
+    const { students, classes, removeStudentFromGroup, transferStudent, vacationPeriods, updateStudent, groups } = useData();
     const student = students.find(s => s.id === studentId);
 
     if (!student) {
@@ -36,6 +38,122 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [editingPayment, setEditingPayment] = useState<{ id: string, amount: number, date: string, description: string } | null>(null);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [groupToRemove, setGroupToRemove] = useState<{ id: string, name: string } | null>(null);
+    const [groupToTransfer, setGroupToTransfer] = useState<{ id: string, name: string } | null>(null);
+    const [targetGroupId, setTargetGroupId] = useState<string>('');
+    const [isAddEnrollmentModalOpen, setIsAddEnrollmentModalOpen] = useState(false);
+    const [enrollmentGroupId, setEnrollmentGroupId] = useState<string>('');
+    const [isFreezeModalOpen, setIsFreezeModalOpen] = useState(false);
+    const [freezeStartDate, setFreezeStartDate] = useState('');
+    const [freezeEndDate, setFreezeEndDate] = useState('');
+    const [freezeReason, setFreezeReason] = useState('');
+
+    const handleAddFreezePeriod = async () => {
+        if (!freezeStartDate || !freezeEndDate) {
+            alert('Vă rugăm să selectați data de început și data de sfârșit.');
+            return;
+        }
+        if (new Date(freezeStartDate) > new Date(freezeEndDate)) {
+            alert('Data de început trebuie să fie înainte de data de sfârșit.');
+            return;
+        }
+
+        const newFreeze = {
+            id: `freeze_${Date.now()}`,
+            startDate: freezeStartDate,
+            endDate: freezeEndDate,
+            reason: freezeReason
+        };
+
+        const currentFreezePeriods = student.subscription.freezePeriods || [];
+        const updatedFreezePeriods = [...currentFreezePeriods, newFreeze];
+
+        // Calculate days to extend
+        const start = new Date(freezeStartDate);
+        const end = new Date(freezeEndDate);
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // Inclusive
+
+        // Extend expiry date
+        const currentExpiry = new Date(student.subscription.expiryDate);
+        currentExpiry.setDate(currentExpiry.getDate() + diffDays);
+        const newExpiryDateStr = currentExpiry.toISOString().split('T')[0];
+
+        await updateStudent(student.id, {
+            subscription: {
+                ...student.subscription,
+                expiryDate: newExpiryDateStr,
+                freezePeriods: updatedFreezePeriods
+            }
+        });
+
+        setIsFreezeModalOpen(false);
+        setFreezeStartDate('');
+        setFreezeEndDate('');
+        setFreezeReason('');
+    };
+
+    const handleRemoveFreezePeriod = async (freezeId: string) => {
+        if (!window.confirm('Sigur doriți să ștergeți această perioadă de înghețare? Data de expirare va fi ajustată corespunzător.')) return;
+
+        const freezeToRemove = student.subscription.freezePeriods?.find(f => f.id === freezeId);
+        if (!freezeToRemove) return;
+
+        const updatedFreezePeriods = student.subscription.freezePeriods?.filter(f => f.id !== freezeId) || [];
+
+        // Calculate days to reduce
+        const start = new Date(freezeToRemove.startDate);
+        const end = new Date(freezeToRemove.endDate);
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // Inclusive
+
+        // Reduce expiry date
+        const currentExpiry = new Date(student.subscription.expiryDate);
+        currentExpiry.setDate(currentExpiry.getDate() - diffDays);
+        const newExpiryDateStr = currentExpiry.toISOString().split('T')[0];
+
+        await updateStudent(student.id, {
+            subscription: {
+                ...student.subscription,
+                expiryDate: newExpiryDateStr,
+                freezePeriods: updatedFreezePeriods
+            }
+        });
+    };
+
+    const handleAddEnrollment = async () => {
+        if (!enrollmentGroupId) return;
+        
+        const group = groups.find(g => g.id === enrollmentGroupId);
+        if (!group) return;
+        
+        if (student.enrollments?.some(e => e.groupId === enrollmentGroupId)) {
+            alert(t('members.alreadyEnrolled'));
+            return;
+        }
+
+        const newEnrollment = {
+            groupId: group.id,
+            groupName: group.name,
+            style: group.style,
+            level: group.level,
+            role: student.gender === 'M' ? 'Leader' : 'Follower',
+            schedule: `${group.schedule.day} ${group.schedule.time}`,
+            start_date: new Date().toISOString().split('T')[0]
+        };
+
+        const updatedEnrollments = [...(student.enrollments || []), newEnrollment];
+        
+        const updates: any = { enrollments: updatedEnrollments };
+        if (updatedEnrollments.length === 1) {
+            updates.mainGroup = group.name;
+        }
+
+        await updateStudent(student.id, updates);
+        setIsAddEnrollmentModalOpen(false);
+        setEnrollmentGroupId('');
+    };
 
     // Paste Image Listener
     useEffect(() => {
@@ -150,22 +268,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
         if (daysSinceLast >= 15) daysColor = 'text-red-600';
 
         // 6. Robust Expiry Logic
-        let effectiveExpiryDate;
-        const sortedPayments = [...(student.paymentHistory || [])]
-            .filter(p => p.status === 'success')
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-        if (sortedPayments.length > 0) {
-            let expiry = calculateAdjustedExpiryDate(sortedPayments[0].date, vacationPeriods);
-            for (let i = 1; i < sortedPayments.length; i++) {
-                const paymentDate = new Date(sortedPayments[i].date);
-                const baseDate = paymentDate > expiry ? sortedPayments[i].date : expiry.toISOString().split('T')[0];
-                expiry = calculateAdjustedExpiryDate(baseDate, vacationPeriods);
-            }
-            effectiveExpiryDate = expiry;
-        } else {
-            effectiveExpiryDate = new Date(student.subscription.expiryDate);
-        }
+        const effectiveExpiryDate = student.subscription.expiryDate ? new Date(student.subscription.expiryDate) : new Date();
 
         const daysUntilExpiry = Math.ceil((effectiveExpiryDate.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
         const isExpired = !isStaff && daysUntilExpiry < 0;
@@ -190,7 +293,108 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
             isStaff,
             expiryDateStr: effectiveExpiryDate.toISOString().split('T')[0]
         };
-    }, [student, vacationPeriods]);
+    }, [student, vacationPeriods, updateStudent]);
+
+    const handleSyncPayments = async (silent = false) => {
+        setIsSyncing(true);
+        try {
+            const { payments: syncedPayments, subscription: syncedSubscription } = await syncStripePayments({
+                email: student.email,
+                name: student.name,
+                phone: student.phone,
+                stripeCustomerId: student.stripeCustomerId,
+            });
+
+            let updatedSubscription = { ...student.subscription };
+            let hasSubscriptionChanges = false;
+
+            if (syncedSubscription) {
+                let newPlan = updatedSubscription.type;
+                if (syncedSubscription.planName?.includes('Bronze')) newPlan = 'Bronze';
+                else if (syncedSubscription.planName?.includes('Silver')) newPlan = 'Silver';
+                else if (syncedSubscription.planName?.includes('Gold')) newPlan = 'Gold';
+                else if (syncedSubscription.planName?.includes('Platinum')) newPlan = 'Platinum';
+
+                if (newPlan !== updatedSubscription.type) {
+                    updatedSubscription.type = newPlan;
+                    hasSubscriptionChanges = true;
+                }
+                
+                if (syncedSubscription.status === 'active') {
+                    updatedSubscription.active = true;
+                    hasSubscriptionChanges = true;
+                }
+            }
+
+            if (!syncedPayments || syncedPayments.length === 0) {
+                if (hasSubscriptionChanges) {
+                    onSave({
+                        ...student,
+                        subscription: updatedSubscription
+                    });
+                    if (!silent) alert(`Abonamentul a fost actualizat, dar nu s-au găsit plăți noi.`);
+                } else {
+                    if (!silent) alert('Nu s-au găsit plăți noi.');
+                }
+                setIsSyncing(false);
+                return;
+            }
+
+            const stripePayments = syncedPayments;
+            const stripeKeys = new Set(stripePayments.map(p => {
+                const datePart = p.date.includes('T') ? p.date.split('T')[0] : p.date;
+                return `${datePart}_${p.amount}`;
+            }));
+
+            const manualPaymentsToKeep = (student.paymentHistory || [])
+                .filter(p => !p.id || p.id.startsWith('pay_'))
+                .filter(p => {
+                    const datePart = p.date.includes('T') ? p.date.split('T')[0] : p.date;
+                    return !stripeKeys.has(`${datePart}_${p.amount}`);
+                });
+
+            let updatedPaymentHistory: any[] = [...manualPaymentsToKeep, ...stripePayments];
+            updatedPaymentHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            
+            const addedCount = updatedPaymentHistory.length - (student.paymentHistory?.length || 0);
+
+            const latestPayment = updatedPaymentHistory[0];
+            let newExpiryDateStr = updatedSubscription.expiryDate;
+            let newLastPaymentDate = updatedSubscription.lastPaymentDate;
+
+            if (latestPayment) {
+                const adjustedExpiryDate = calculateSubscriptionExpiryDate(updatedPaymentHistory, updatedSubscription.expiryDate, vacationPeriods);
+                newExpiryDateStr = adjustedExpiryDate.toISOString().split('T')[0];
+                newLastPaymentDate = latestPayment.date;
+            }
+
+            onSave({
+                ...student,
+                paymentHistory: updatedPaymentHistory,
+                subscription: {
+                    ...updatedSubscription,
+                    active: true,
+                    lastPaymentDate: newLastPaymentDate,
+                    expiryDate: newExpiryDateStr,
+                },
+            });
+
+            if (!silent) {
+                if (addedCount > 0) {
+                    alert(`Sincronizare finalizată! ${addedCount} plăți noi adăugate.`);
+                } else if (hasSubscriptionChanges) {
+                    alert(`Abonamentul a fost actualizat. Istoricul plăților este la zi.`);
+                } else {
+                    alert(`Sincronizare finalizată! Istoricul a fost actualizat și corectat.`);
+                }
+            }
+        } catch (err: any) {
+            console.error(`Eroare la sincronizarea plăților pentru ${student.name}:`, err);
+            if (!silent) alert(`Eroare la sincronizarea plăților: ${err.message}`);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -271,14 +475,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
         let newLastPaymentDate = student.subscription.lastPaymentDate;
 
         if (latestPayment) {
-             const latestDate = new Date(latestPayment.date);
-             const newExpiry = new Date(latestDate);
-             newExpiry.setMonth(newExpiry.getMonth() + 1);
-             // Handle edge cases (e.g., Jan 31 -> Feb 28)
-             if (newExpiry.getDate() !== latestDate.getDate()) {
-                 newExpiry.setDate(0);
-             }
-             
+             const newExpiry = calculateSubscriptionExpiryDate(updatedHistory, student.subscription.expiryDate, vacationPeriods);
              newExpiryDateStr = newExpiry.toISOString().split('T')[0];
              newLastPaymentDate = latestPayment.date;
         }
@@ -298,9 +495,27 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
         setEditingPayment(null);
     };
 
-    const handleRemoveEnrollment = async (groupId: string, groupName: string) => {
-        if (confirm(`Sigur vrei să ștergi înscrierea la grupa "${groupName}"?`)) {
-            await removeStudentFromGroup(student.id, groupId);
+    const handleRemoveEnrollment = (groupId: string, groupName: string) => {
+        setGroupToRemove({ id: groupId, name: groupName });
+    };
+
+    const handleTransferEnrollment = (groupId: string, groupName: string) => {
+        setGroupToTransfer({ id: groupId, name: groupName });
+        setTargetGroupId('');
+    };
+
+    const confirmRemoveFromGroup = async () => {
+        if (groupToRemove) {
+            await removeStudentFromGroup(student.id, groupToRemove.id);
+            setGroupToRemove(null);
+        }
+    };
+
+    const confirmTransfer = async () => {
+        if (groupToTransfer && targetGroupId) {
+            await transferStudent(student.id, groupToTransfer.id, targetGroupId);
+            setGroupToTransfer(null);
+            setTargetGroupId('');
         }
     };
 
@@ -380,7 +595,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                             <h1 className="text-xl xl:text-2xl font-black text-gray-900 dark:text-white leading-tight mb-1 truncate">{student.name}</h1>
                             {student.nickname && <p className="text-sm xl:text-lg font-bold text-gray-400 mb-1">"{student.nickname}"</p>}
                             <p className="text-xs xl:text-sm text-gray-500 font-medium truncate">{student.email}</p>
-                            <p className="text-xs xl:text-sm font-bold text-gray-900 dark:text-white mt-1">{student.phone}</p>
+                            <a href={`tel:${student.phone}`} onClick={(e) => e.stopPropagation()} className="text-xs xl:text-sm font-bold text-brand-green hover:underline mt-1 inline-block">{student.phone}</a>
                             
                             {/* Mobile Change Photo Link */}
                             <button onClick={() => fileInputRef.current?.click()} className="xl:hidden text-[10px] font-bold text-blue-600 mt-2 flex items-center gap-1">
@@ -444,7 +659,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                     <div className="flex w-full gap-3 mt-auto">
                        {!isEditing ? (
                            <>
-                               <Button onClick={() => onAddTask(student.name)} className="!w-auto h-10 px-4 text-xs gap-2 bg-white text-gray-900 border border-gray-200 hover:bg-gray-50"><MessageCircle size={14}/> Adaugă Notă</Button>
+                               <Button onClick={() => setIsEditing(true)} className="!w-auto h-10 px-6 text-xs gap-2 bg-amber-400 text-amber-950 border-none hover:bg-amber-500 font-bold shadow-sm"><Edit2 size={14}/> {t('general.edit')}</Button>
                                <div className="flex gap-2">
                                    <button onClick={handleWhatsApp} className="w-11 h-11 flex items-center justify-center rounded-xl border border-green-200 bg-green-50 text-green-600 hover:bg-green-100" title="WhatsApp"><MessageCircle size={18} /></button>
                                    
@@ -454,11 +669,11 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                                        <button onClick={handleArchive} className="w-11 h-11 flex items-center justify-center rounded-xl border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100" title="Arhivează"><Archive size={18} /></button>
                                    )}
 
-                                   <button onClick={() => setShowDeleteConfirm(true)} className="w-11 h-11 flex items-center justify-center rounded-xl border border-red-100 text-red-500 hover:bg-red-50" title="Șterge"><Trash2 size={18} /></button>
+                                   <button onClick={() => setShowDeleteConfirm(true)} className="w-11 h-11 flex items-center justify-center rounded-xl border border-red-100 text-red-500 hover:bg-red-50" title={t('general.delete')}><Trash2 size={18} /></button>
                                </div>
                            </>
                        ) : (
-                           <Button variant="secondary" onClick={() => setIsEditing(false)} className="flex-1 h-11 text-sm font-bold">Anulează Editarea</Button>
+                           <Button variant="secondary" onClick={() => setIsEditing(false)} className="flex-1 h-11 text-sm font-bold">{t('general.cancel')}</Button>
                        )}
                     </div>
               </div>
@@ -468,13 +683,13 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
            <div className="flex-1 flex flex-col min-w-0">
               {/* Sticky Tabs on Mobile */}
               {!isEditing && (
-                  <div className="sticky top-0 z-10 bg-[#F9FAFB] pb-2 pt-1 -mx-4 px-4 xl:static xl:bg-transparent xl:p-0 xl:mb-6">
+                  <div className="sticky top-0 z-10 bg-[#F9FAFB] pb-2 pt-1 -mx-4 px-4 xl:static xl:bg-transparent xl:mx-0 xl:p-0 xl:mb-6">
                       <div className="flex gap-2 overflow-x-auto no-scrollbar">
                           {[
-                              { id: 'overview', label: 'General' },
-                              { id: 'attendance', label: 'Prezență' },
-                              { id: 'payments', label: 'Plăți' },
-                              { id: 'notes', label: 'Notițe' }
+                              { id: 'overview', label: t('members.tabOverview') || 'General' },
+                              { id: 'attendance', label: t('members.tabAttendance') || 'Prezență' },
+                              { id: 'payments', label: t('members.tabPayments') || 'Plăți' },
+                              { id: 'notes', label: t('members.tabNotes') || 'Notițe' }
                           ].map(t => (
                               <button 
                                   key={t.id} 
@@ -499,7 +714,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                          {/* 1. Attendance 30 Days */}
                          <div className="bg-white dark:bg-gray-900 rounded-[24px] p-5 xl:p-6 border border-gray-100 dark:border-gray-800 flex flex-col justify-between shadow-sm">
-                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Prezențe (30z)</p>
+                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">{t('members.kpiAttendance') || 'Prezențe (30z)'}</p>
                              <div className="flex items-center gap-2">
                                  <p className="text-2xl xl:text-3xl font-black text-gray-900 dark:text-white">{metrics.attendanceDisplay}</p>
                                  <Badge color="bg-gray-100 text-gray-600 border-none">{metrics.attendanceRate}%</Badge>
@@ -508,25 +723,25 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                          
                          {/* 2. Days Since Last */}
                          <div className="bg-white dark:bg-gray-900 rounded-[24px] p-5 xl:p-6 border border-gray-100 dark:border-gray-800 flex flex-col justify-between shadow-sm">
-                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Ultima prezență</p>
+                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">{t('members.kpiLastAttendance') || 'Ultima prezență'}</p>
                              <div className="flex items-center gap-2">
                                  <p className={`text-2xl xl:text-3xl font-black ${metrics.daysColor}`}>{metrics.daysSinceLast}</p>
-                                 <span className="text-xs font-bold text-gray-400">zile</span>
+                                 <span className="text-xs font-bold text-gray-400">{t('members.days') || 'zile'}</span>
                              </div>
                          </div>
 
                          {/* 3. LTV */}
                          <div className="bg-white dark:bg-gray-900 rounded-[24px] p-5 xl:p-6 border border-gray-100 dark:border-gray-800 flex flex-col justify-between shadow-sm">
-                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Valoare (LTV)</p>
+                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">{t('members.kpiValue') || 'Valoare (LTV)'}</p>
                              <div>
                                  <p className="text-2xl xl:text-3xl font-black text-blue-600">{metrics.ltv} <span className="text-sm text-gray-400">RON</span></p>
-                                 <p className="text-[10px] font-bold text-gray-400 mt-1">Membru de {metrics.months} luni</p>
+                                 <p className="text-[10px] font-bold text-gray-400 mt-1">{t('members.memberSince') || 'Membru de'} {metrics.months} {t('members.months') || 'luni'}</p>
                              </div>
                          </div>
 
                          {/* 4. Churn Risk */}
                          <div className={`rounded-[24px] p-5 xl:p-6 border flex flex-col justify-between shadow-sm ${metrics.riskBg} border-${metrics.riskColor.split('-')[1]}-200`}>
-                             <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${metrics.riskColor}`}>Status Retenție</p>
+                             <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${metrics.riskColor}`}>{t('members.kpiRetention') || 'Status Retenție'}</p>
                              <div className="flex items-center gap-2">
                                  <p className={`text-lg xl:text-xl font-black ${metrics.riskColor}`}>{metrics.riskLabel}</p>
                                  {metrics.riskIcon}
@@ -541,6 +756,10 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                               student={student} 
                               onNavigateToGroup={onNavigateToGroup} 
                               onRemoveEnrollment={handleRemoveEnrollment}
+                              onTransferEnrollment={handleTransferEnrollment}
+                              onAddEnrollment={() => setIsAddEnrollmentModalOpen(true)}
+                              onOpenFreezeModal={() => setIsFreezeModalOpen(true)}
+                              onRemoveFreezePeriod={handleRemoveFreezePeriod}
                           />
                       )}
                   </div>
@@ -561,11 +780,55 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                       payments={displayPayments} 
                       onAddPayment={() => { setEditingPayment(null); setIsPaymentModalOpen(true); }}
                       onEditPayment={(payment) => { setEditingPayment(payment); setIsPaymentModalOpen(true); }}
+                      onSyncPayments={() => handleSyncPayments(false)}
+                      isSyncing={isSyncing}
                   />
               )}
               {activeTab === 'notes' && <StudentNotesTab notes={student.adminNotes || []} onAdd={handleAddNote} onDelete={handleDeleteNote} />}
            </div>
         </div>
+
+        <Modal isOpen={isFreezeModalOpen} onClose={() => setIsFreezeModalOpen(false)} title={t('members.freezeTitle') || "Îngheață Abonament"}>
+            <div className="space-y-4">
+                <p className="text-sm text-gray-500">
+                    {t('members.freezeDescription') || "Adăugarea unei perioade de înghețare va prelungi automat data de expirare a abonamentului cu numărul de zile selectat."}
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase">{t('members.freezeFrom') || "De la"}</label>
+                        <input 
+                            type="date" 
+                            className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2"
+                            value={freezeStartDate}
+                            onChange={e => setFreezeStartDate(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase">{t('members.freezeTo') || "Până la"}</label>
+                        <input 
+                            type="date" 
+                            className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2"
+                            value={freezeEndDate}
+                            onChange={e => setFreezeEndDate(e.target.value)}
+                        />
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase">{t('members.freezeReason') || "Motiv (Opțional)"}</label>
+                    <input 
+                        type="text" 
+                        placeholder={t('members.freezeReasonPlaceholder') || "Ex: Concediu medical, Plecat din țară..."}
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2"
+                        value={freezeReason}
+                        onChange={e => setFreezeReason(e.target.value)}
+                    />
+                </div>
+                <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="secondary" onClick={() => setIsFreezeModalOpen(false)}>{t('general.cancel')}</Button>
+                    <Button variant="primary" onClick={handleAddFreezePeriod}>{t('general.save')}</Button>
+                </div>
+            </div>
+        </Modal>
 
         <AddPaymentModal 
             isOpen={isPaymentModalOpen} 
@@ -575,6 +838,28 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
             initialData={editingPayment}
         />
 
+        <Modal isOpen={isAddEnrollmentModalOpen} onClose={() => setIsAddEnrollmentModalOpen(false)} title="Adaugă în Grupă">
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase">Selectează Grupa</label>
+                    <select
+                        value={enrollmentGroupId}
+                        onChange={(e) => setEnrollmentGroupId(e.target.value)}
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500 transition-all dark:text-white"
+                    >
+                        <option value="">-- Alege o grupă --</option>
+                        {groups.map(g => (
+                            <option key={g.id} value={g.id}>{g.name} ({g.style} - {g.level})</option>
+                        ))}
+                    </select>
+                </div>
+                <div className="flex gap-3 pt-4">
+                    <Button variant="secondary" onClick={() => setIsAddEnrollmentModalOpen(false)} className="flex-1">Anulează</Button>
+                    <Button onClick={handleAddEnrollment} disabled={!enrollmentGroupId} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white border-none">Adaugă</Button>
+                </div>
+            </div>
+        </Modal>
+
         <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} title="Confirmare Ștergere">
             <div className="space-y-4">
                 <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3">
@@ -582,6 +867,70 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                     <div><h4 className="font-bold text-red-900 text-sm">Acțiune Ireversibilă</h4><p className="text-xs text-red-700 mt-1">Ești pe cale să ștergi definitiv membrul.</p></div>
                 </div>
                 <div className="flex gap-3 pt-2"><Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>Anulează</Button><Button variant="danger" onClick={onDelete}>Șterge</Button></div>
+            </div>
+        </Modal>
+
+        <Modal isOpen={!!groupToRemove} onClose={() => setGroupToRemove(null)} title="Elimină din Grupă">
+            <div className="space-y-4">
+                <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-3">
+                    <div className="p-2 bg-white rounded-lg text-amber-600"><AlertTriangle size={24} /></div>
+                    <div>
+                        <h4 className="font-bold text-amber-900 text-sm">Confirmare Eliminare</h4>
+                        <p className="text-xs text-amber-700 mt-1">
+                            Sigur vrei să elimini studentul din grupa <strong>{groupToRemove?.name}</strong>? 
+                            Această acțiune va șterge înscrierea, dar istoricul de prezență va rămâne.
+                        </p>
+                    </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                    <Button variant="secondary" onClick={() => setGroupToRemove(null)}>Anulează</Button>
+                    <Button variant="danger" onClick={confirmRemoveFromGroup}>Elimină</Button>
+                </div>
+            </div>
+        </Modal>
+
+        <Modal isOpen={!!groupToTransfer} onClose={() => setGroupToTransfer(null)} title="Transferă Student">
+            <div className="space-y-4">
+                <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-start gap-3">
+                    <div className="p-2 bg-white rounded-lg text-blue-600"><RefreshCw size={24} /></div>
+                    <div>
+                        <h4 className="font-bold text-blue-900 text-sm">Transfer de la {groupToTransfer?.name}</h4>
+                        <p className="text-xs text-blue-700 mt-1">
+                            Alege noua grupă în care vrei să transferi studentul. Această acțiune va muta înscrierea curentă.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Alege Grupa Destinație</label>
+                    <select 
+                        value={targetGroupId}
+                        onChange={(e) => setTargetGroupId(e.target.value)}
+                        className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm outline-none focus:border-blue-500 transition-all"
+                    >
+                        <option value="">Selectează o grupă...</option>
+                        {groups
+                            .filter(g => g.id !== groupToTransfer?.id)
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map(g => (
+                                <option key={g.id} value={g.id}>
+                                    {g.name} ({g.style} - {g.level})
+                                </option>
+                            ))
+                        }
+                    </select>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                    <Button variant="secondary" onClick={() => setGroupToTransfer(null)}>Anulează</Button>
+                    <Button 
+                        onClick={confirmTransfer} 
+                        disabled={!targetGroupId}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                        Confirmă Transferul
+                    </Button>
+                </div>
             </div>
         </Modal>
       </div>

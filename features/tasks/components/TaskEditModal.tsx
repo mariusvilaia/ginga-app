@@ -92,7 +92,7 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({ isOpen, onClose, t
     const assigneeOptions = [
         ...staffMembers,
         ...instructors.map(i => ({ id: i.id, name: i.name, avatarUrl: i.avatarUrl }))
-    ].filter(p => !['Ana', 'Dan'].includes(p.name) && !p.name.startsWith('Ana ') && !p.name.startsWith('Dan '));
+    ].filter(p => p.name && !['Ana', 'Dan'].includes(p.name) && !p.name.startsWith('Ana ') && !p.name.startsWith('Dan '));
 
     const tags = ['Sales', 'Finance', 'Marketing', 'Admin', 'Events', 'PR', 'HR', 'Festivals'];
     const priorities = [

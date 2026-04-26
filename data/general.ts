@@ -41,23 +41,23 @@ export const COMPANY_DETAILS = {
 // Individual Avatar URLs
 export const AVATARS = {
   // Bachata Instructors
-  Robert: "https://randomuser.me/api/portraits/men/32.jpg",
-  Agata: "https://randomuser.me/api/portraits/women/44.jpg",
-  MariusComan: "https://randomuser.me/api/portraits/men/62.jpg",
-  Andra: "https://randomuser.me/api/portraits/women/65.jpg",
+  Robert: "",
+  Agata: "",
+  MariusComan: "",
+  Andra: "",
   
   // Salsa Instructors
-  Adrian: "https://randomuser.me/api/portraits/men/22.jpg",
-  Andreea: "https://randomuser.me/api/portraits/women/28.jpg",
-  Adelin: "https://randomuser.me/api/portraits/men/11.jpg",
-  Laura: "https://randomuser.me/api/portraits/women/33.jpg",
+  Adrian: "",
+  Andreea: "",
+  Adelin: "",
+  Laura: "",
 
   // Kizomba Instructors
-  MariusVilaia: "https://randomuser.me/api/portraits/men/86.jpg",
-  Diana: "https://randomuser.me/api/portraits/women/68.jpg",
+  MariusVilaia: "",
+  Diana: "",
 
   // Others
-  Maria: "https://randomuser.me/api/portraits/women/90.jpg",
+  Maria: "",
   GingaTeam: "https://ui-avatars.com/api/?name=Ginga+Team&background=e11d48&color=fff",
   GingaTeam_Group: "https://images.unsplash.com/photo-1545389336-cf090694435e?ixlib=rb-1.2.1&auto=format&fit=crop&w=400&q=80", 
 };

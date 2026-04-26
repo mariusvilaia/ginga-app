@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
-import { Users, UserPlus, UserMinus, Percent, Wallet, XCircle, CheckCircle, AlertOctagon as AlertOctagonIcon, UserX, TrendingDown, Sparkles, BrainCircuit, CheckSquare, CalendarCheck, BarChart3, PauseCircle, AlertTriangle, Star, ArrowRight, ArrowUpRight, ArrowDownRight, RefreshCw } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Users, UserPlus, UserMinus, Percent, Wallet, XCircle, CheckCircle, AlertOctagon as AlertOctagonIcon, UserX, TrendingDown, TrendingUp, Sparkles, BrainCircuit, CheckSquare, CalendarCheck, BarChart3, PauseCircle, AlertTriangle, Star, ArrowRight, ArrowUpRight, ArrowDownRight, RefreshCw, User } from 'lucide-react';
 import { MOCK_INSTRUCTOR_ATTENDANCE, MOCK_ATTENDANCE_SESSIONS } from '../../constants';
 import { Button, Badge } from '../../components/UIComponents';
 import { SalesChart } from '../../components/shared/SalesChart';
@@ -10,6 +10,8 @@ import { TargetIcon } from '../../components/shared/TargetIcon';
 import { AdminTask, DanceClass } from '../../types';
 import { useData } from '../../contexts/DataContext';
 import { TaskEditModal } from '../tasks/components/TaskEditModal';
+import { calculateSubscriptionExpiryDate } from '../../utils/dateUtils';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 interface OverviewViewProps {
     isDarkMode: boolean;
@@ -20,7 +22,8 @@ interface OverviewViewProps {
 }
 
 export const OverviewView: React.FC<OverviewViewProps> = ({ isDarkMode, onNavigate, tasks, onAddTask, onUpdateTask }) => {
-  const { students, groups, instructors, classes, financials } = useData(); // USE LIVE CONTEXT
+  const { language, t } = useLanguage();
+  const { students, groups, instructors, classes, financials, vacationPeriods } = useData(); // USE LIVE CONTEXT
   const [selectedKpi, setSelectedKpi] = useState<any | null>(null);
   const [editingTask, setEditingTask] = useState<AdminTask | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -40,13 +43,27 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ isDarkMode, onNaviga
   };
 
   // Helper for expiry check
-  const getDaysLeft = (dateStr: string) => {
-      const expiry = new Date(dateStr).getTime();
+  const getDaysLeft = useCallback((student: any) => {
+      if (!student.subscription?.expiryDate) return 0;
+      const expiryDate = new Date(student.subscription.expiryDate);
       const now = new Date().getTime();
-      return Math.ceil((expiry - now) / (1000 * 3600 * 24));
-  };
+      return Math.ceil((expiryDate.getTime() - now) / (1000 * 3600 * 24));
+  }, []);
 
   // Live Calculations
+  // Active means: subscription.active=true AND subscription not expired
+  const activeSubscriptionsCount = students.filter(s => {
+      if (!s.subscription?.active) return false;
+      
+      const isStaff = s.subscription.type === 'Staff';
+      if (isStaff) return true;
+
+      if (s.subscription.expiryDate) {
+          return getDaysLeft(s) >= 0;
+      }
+      return true;
+  }).length;
+
   // Active means: status='active' AND subscription.active=true AND subscription not expired
   const activeStudentsCount = students.filter(s => {
       if (s.status !== 'active') return false;
@@ -56,7 +73,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ isDarkMode, onNaviga
       if (isStaff) return true;
 
       if (s.subscription.expiryDate) {
-          return getDaysLeft(s.subscription.expiryDate) >= 0;
+          return getDaysLeft(s) >= 0;
       }
       return true;
   }).length;
@@ -75,40 +92,66 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ isDarkMode, onNaviga
       ? Math.round(retentionRates.reduce((a, b) => a + b, 0) / retentionRates.length) 
       : 0;
   
-  // Calculate Revenue: Sum of PAYMENTS from last 30 days based on active plans
-  const calculatedRevenue = students.reduce((sum, s) => {
-      // Logic: If subscription is active, we assume it was paid.
-      // If lastPaymentDate exists, we check if it's within 30 days.
-      // If lastPaymentDate is missing but status is active, we include it (fallback for mock data).
-      
-      const lastPaymentDate = s.subscription?.lastPaymentDate ? new Date(s.subscription.lastPaymentDate) : null;
-      const isRecentPayment = lastPaymentDate 
-          ? (today.getTime() - lastPaymentDate.getTime()) / (1000 * 3600 * 24) <= 30
-          : s.subscription?.active; // Fallback if date missing
+  // Calculate Churn Rate: Monthly Churn Rate (Churned in last 30 days / Active 30 days ago)
+  const churnRate = useMemo(() => {
+      const now = new Date();
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(now.getDate() - 30);
 
-      if (isRecentPayment && s.subscription?.active) {
-         let price = 0;
-         const plan = s.subscription?.type || '';
-         
-         if (plan.includes('Bronze')) price = 189;
-         else if (plan.includes('Silver')) price = 269;
-         else if (plan.includes('Gold')) price = 349;
-         else if (plan.includes('Platinum')) price = 449;
-         // Staff is 0
-         
-         return sum + price;
-      }
-      return sum;
-  }, 0);
+      const churnedLast30Days = students.filter(s => {
+          const isActive = s.status === 'active' && s.subscription?.active && (!s.subscription.expiryDate || getDaysLeft(s) >= 0);
+          if (isActive) return false;
+          
+          if (s.subscription?.expiryDate) {
+              const expiry = new Date(s.subscription.expiryDate);
+              return expiry >= thirtyDaysAgo && expiry <= now;
+          }
+          return false;
+      }).length;
+
+      const currentlyActiveJoinedBefore30Days = students.filter(s => {
+          const isActive = s.status === 'active' && s.subscription?.active && (!s.subscription.expiryDate || getDaysLeft(s) >= 0);
+          if (!isActive) return false;
+          if (!s.joinDate) return true;
+          return new Date(s.joinDate) < thirtyDaysAgo;
+      }).length;
+
+      const active30DaysAgo = currentlyActiveJoinedBefore30Days + churnedLast30Days;
+
+      if (active30DaysAgo === 0) return '0%';
+      
+      return ((churnedLast30Days / active30DaysAgo) * 100).toFixed(1) + '%';
+  }, [students, getDaysLeft]);
+
+  // Calculate MRR: Sum of monthly prices of all active subscriptions
+  const calculatedMRR = useMemo(() => {
+      return students.reduce((sum, s) => {
+          if (!s.subscription?.active) return sum;
+          
+          const isStaff = s.subscription.type === 'Staff';
+          if (isStaff) return sum;
+          
+          if (s.subscription.expiryDate) {
+              if (getDaysLeft(s) < 0) return sum;
+          }
+
+          let price = 0;
+          const plan = s.subscription?.type || '';
+          
+          if (plan.includes('Bronze')) price = 189;
+          else if (plan.includes('Silver')) price = 269;
+          else if (plan.includes('Gold')) price = 349;
+          else if (plan.includes('Platinum')) price = 449;
+          
+          return sum + price;
+      }, 0);
+  }, [students, getDaysLeft]);
   
-  const currentRevenue = calculatedRevenue.toLocaleString();
+  const currentRevenue = calculatedMRR.toLocaleString();
 
   const failedPaymentsCount = students.filter(s => s.kpi?.paymentStatus === 'unpaid').length;
   
   const todayStr = today.toISOString().split('T')[0];
-  const checkinsToday = classes
-      .filter(c => c.date?.startsWith(todayStr))
-      .reduce((acc, c) => acc + (c.occupancy?.current || 0), 0);
 
   // --- TODAYS CLASSES LOGIC ---
   const todaysClasses = useMemo(() => {
@@ -129,6 +172,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ isDarkMode, onNaviga
 
       return matches.sort((a, b) => a.time.localeCompare(b.time));
   }, [classes, todayStr]);
+
+  const checkinsToday = todaysClasses.reduce((acc, c) => acc + (c.occupancy?.current || 0), 0);
 
   const getClassStatus = (cls: DanceClass) => {
       if (!cls.date) return 'upcoming';
@@ -152,26 +197,76 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ isDarkMode, onNaviga
       return 'upcoming';
   };
 
+  // Calculate LTV: Average total revenue per paying student
+  const calculatedLtv = useMemo(() => {
+      const payingStudents = students.filter(s => 
+          s.paymentHistory && s.paymentHistory.some(t => t.status === 'success')
+      );
+      if (payingStudents.length === 0) return 0;
+      
+      const totalRevenue = payingStudents.reduce((sum, s) => {
+          return sum + (s.paymentHistory?.reduce((studentSum, t) => studentSum + (t.status === 'success' ? t.amount : 0), 0) || 0);
+      }, 0);
+      
+      return Math.round(totalRevenue / payingStudents.length);
+  }, [students]);
+
+  // Calculate Average Membership Lifetime (in days)
+  const avgLifetime = useMemo(() => {
+      let validStudentsCount = 0;
+      const totalDays = students.reduce((sum, s) => {
+          if (!s.joinDate) return sum;
+          const joinDate = new Date(s.joinDate);
+          let endDate = new Date(); // default to now for active
+          
+          const isActive = s.status === 'active' && s.subscription?.active && (!s.subscription.expiryDate || getDaysLeft(s) >= 0);
+          
+          if (!isActive) {
+              // Student is inactive, use expiry date or last payment date
+              if (s.subscription?.expiryDate) {
+                  endDate = new Date(s.subscription.expiryDate);
+              } else if (s.subscription?.lastPaymentDate) {
+                  endDate = new Date(s.subscription.lastPaymentDate);
+                  endDate.setMonth(endDate.getMonth() + 1); // approximate 1 month after last payment
+              } else {
+                  endDate = joinDate;
+              }
+          }
+          
+          // Ensure endDate is not before joinDate
+          if (endDate < joinDate) endDate = joinDate;
+          
+          const diffInDays = Math.floor((endDate.getTime() - joinDate.getTime()) / (1000 * 3600 * 24));
+          validStudentsCount++;
+          return sum + diffInDays;
+      }, 0);
+
+      const avgDays = validStudentsCount > 0 ? Math.round(totalDays / validStudentsCount) : 0;
+      
+      return `${avgDays} zile`;
+  }, [students, getDaysLeft]);
+
   const dashboardKPIs = [
-    { id: 'members', label: 'Membri Activi', value: activeStudentsCount.toString(), color: 'bg-blue-50 text-blue-600', icon: Users, change: '+12%', trend: 'up' },
-    { id: 'new_members', label: 'Înscrieri Noi', value: newStudentsCount.toString(), color: 'bg-green-50 text-green-600', icon: UserPlus, change: '+5%', trend: 'up' },
-    { id: 'lost_members', label: 'Cursanți Pierduți', value: lostStudentsCount.toString(), color: 'bg-red-50 text-red-600', icon: UserMinus, change: '-2%', trend: 'down' },
-    { id: 'retention', label: 'Retenție (%)', value: `${avgRetention}%`, color: 'bg-purple-50 text-purple-600', icon: Percent, change: '0%', trend: 'neutral' },
-    { id: 'revenue', label: 'Încasări (RON)', value: currentRevenue, color: 'bg-emerald-50 text-emerald-600', icon: Wallet, change: '+18%', trend: 'up' },
-    { id: 'failed_payments', label: 'Plăți Eșuate', value: failedPaymentsCount.toString(), color: 'bg-orange-50 text-orange-600', icon: XCircle, change: '+1', trend: 'down_bad' },
-    { id: 'checkins', label: 'Check-ins Azi', value: checkinsToday.toString(), color: 'bg-cyan-50 text-cyan-600', icon: CheckCircle, change: '+8', trend: 'up' },
+    { id: 'members', label: t('dashboard.activeMembers'), value: activeSubscriptionsCount.toString(), color: 'bg-blue-50 text-blue-600', icon: Users, change: '+12%', trend: 'up' },
+    { id: 'churn', label: t('dashboard.churnRate'), value: churnRate, color: 'bg-green-50 text-green-600', icon: UserPlus, change: '-0.5%', trend: 'down' },
+    { id: 'mrr', label: t('dashboard.monthlyRevenue'), value: currentRevenue, color: 'bg-emerald-50 text-emerald-600', icon: TrendingUp, change: '+5%', trend: 'up' },
+    { id: 'arpu', label: 'Venit / Membru (RON)', value: activeSubscriptionsCount > 0 ? Math.round(calculatedMRR / activeSubscriptionsCount).toString() : '0', color: 'bg-purple-50 text-purple-600', icon: User, change: '+2%', trend: 'up' },
+    { id: 'ltv', label: t('dashboard.ltv'), value: calculatedLtv.toLocaleString(), color: 'bg-emerald-50 text-emerald-600', icon: Wallet, change: '+18%', trend: 'up' },
+    { id: 'lifetime', label: t('dashboard.avgLifetime'), value: avgLifetime, color: 'bg-orange-50 text-orange-600', icon: CalendarCheck, change: '+0.2', trend: 'up' },
+    { id: 'checkins', label: t('dashboard.checkins'), value: checkinsToday.toString(), color: 'bg-cyan-50 text-cyan-600', icon: CheckCircle, change: '+8', trend: 'up' },
   ];
 
   const handleKpiClick = (kpiId: string) => {
       switch(kpiId) {
           case 'members':
-          case 'new_members':
-          case 'lost_members':
+          case 'churn':
               onNavigate('members');
               break;
-          case 'revenue':
+          case 'ltv':
+          case 'mrr':
+          case 'arpu':
+          case 'lifetime':
           case 'failed_payments':
-          case 'retention':
               onNavigate('finance');
               break;
           case 'checkins':
@@ -313,7 +408,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ isDarkMode, onNaviga
          {/* Left: Today's Operations (Timeline) - Span 4 */}
          <div className="lg:col-span-4 bg-white dark:bg-gray-900 rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm p-6 h-full flex flex-col">
             <div className="flex justify-between items-center mb-6 shrink-0">
-               <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2"><CalendarCheck size={18} className="text-blue-600"/> Activitatea de Azi</h3>
+               <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2"><CalendarCheck size={18} className="text-blue-600"/> {t('dashboard.todayClasses')}</h3>
                <span className="flex h-2.5 w-2.5 relative">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>

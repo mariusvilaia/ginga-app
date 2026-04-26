@@ -2,11 +2,12 @@
 import React from 'react';
 import { 
   LayoutDashboard, Users, Layers, QrCode, UserCog, MessageSquare, CalendarDays, 
-  ChevronRight, ChevronLeft, ListTodo, ClipboardCheck, Wallet, LogOut, Gamepad2, ScanFace, X
+  ChevronRight, ChevronLeft, ListTodo, ClipboardCheck, Wallet, LogOut, Gamepad2, ScanFace, X, CreditCard, Globe
 } from 'lucide-react';
 import { GingaLogo } from '../../shared/GingaLogo';
 import { TargetIcon } from '../../shared/TargetIcon';
 import { UserProfile } from '../../../types';
+import { useLanguage } from '../../../contexts/LanguageContext';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -29,20 +30,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   closeMobile
 }) => {
+  const { language, setLanguage, t } = useLanguage();
+
   const allItems = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'members', label: 'Membri', icon: Users },
+    { id: 'overview', label: t('nav.dashboard'), icon: LayoutDashboard },
+    { id: 'members', label: t('nav.students'), icon: Users },
     { id: 'groups', label: 'Grupe', icon: Layers },
     { id: 'schedule', label: 'Orar', icon: CalendarDays },
     { id: 'attendance', label: 'Check-in', icon: QrCode },
-    { id: 'instructors', label: 'Instructori', icon: UserCog },
+    { id: 'instructors', label: t('nav.instructor'), icon: UserCog },
     { id: 'finance', label: 'Finanțe', icon: Wallet },
     { id: 'leads', label: 'Leaduri', icon: TargetIcon },
     { id: 'instructor_attendance', label: 'Pontaj', icon: ClipboardCheck },
-    { id: 'tasks', label: 'Taskuri', icon: ListTodo },
+    { id: 'tasks', label: t('nav.tasks'), icon: ListTodo },
     { id: 'communications', label: 'Mesaje', icon: MessageSquare },
     { id: 'games', label: 'Jocuri', icon: Gamepad2 },
   ];
+
+  const toggleLanguage = () => {
+    setLanguage(language === 'ro' ? 'en' : 'ro');
+  };
 
   return (
     <>
@@ -113,6 +120,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Footer / User Profile */}
         <div className="p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 mt-auto">
+            <div className={`flex items-center gap-3 mb-4 ${isCollapsed && !isMobileOpen ? 'justify-center' : 'px-2'}`}>
+                <button 
+                    onClick={toggleLanguage}
+                    className="flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+                    title={t(language === 'ro' ? 'lang.en' : 'lang.ro')}
+                >
+                    <Globe size={16} />
+                    {(!isCollapsed || isMobileOpen) && <span>{language.toUpperCase()}</span>}
+                </button>
+            </div>
             <div className={`flex items-center gap-3 ${isCollapsed && !isMobileOpen ? 'justify-center' : ''}`}>
                 <div className="relative group shrink-0">
                     <img src={user.avatarUrl} alt={user.name} className="w-10 h-10 rounded-full bg-gray-900 object-cover border border-gray-200 dark:border-gray-700" />
@@ -129,7 +146,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button 
                         onClick={onLogout}
                         className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                        title="Deconectare"
+                        title={t('nav.logout')}
                     >
                         <LogOut size={18} />
                     </button>

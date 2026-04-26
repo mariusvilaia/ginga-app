@@ -145,10 +145,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({
   }
   const activeDots = Math.ceil(ratio * maxDots);
 
-  const getBadgeStyle = (type: string) => {
-      if (type.includes('Gold')) return 'bg-[#FEF9C3] text-[#854D0E] border-[#FEF08A]';
-      if (type.includes('Silver')) return 'bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]';
-      if (type.includes('Bronze')) return 'bg-[#FFEDD5] text-[#9A3412] border-[#FED7AA]';
+  const getBadgeStyle = (type: string | undefined) => {
+      if (type?.includes('Gold')) return 'bg-[#FEF9C3] text-[#854D0E] border-[#FEF08A]';
+      if (type?.includes('Silver')) return 'bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]';
+      if (type?.includes('Bronze')) return 'bg-[#FFEDD5] text-[#9A3412] border-[#FED7AA]';
       return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 

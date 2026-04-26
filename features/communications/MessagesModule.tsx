@@ -187,7 +187,7 @@ export const MessagesModule: React.FC<MessagesModuleProps> = ({ onNavigateToStud
                                 </span>
                             )}
 
-                            {msg.text.includes('Notă:') || msg.text.includes('Notă Internă') ? (
+                            {msg.text?.includes('Notă:') || msg.text?.includes('Notă Internă') ? (
                                 <div className="p-4 rounded-xl bg-yellow-50 border border-yellow-100 text-yellow-900 shadow-sm w-full text-center my-2 max-w-md mx-auto">
                                     <p className="text-[10px] font-bold uppercase mb-1 flex items-center justify-center gap-1"><StickyNote size={12}/> Notă Internă</p>
                                     <p className="text-sm italic">{msg.text.replace(/Notă:|Notă Internă:/g, '').trim()}</p>

@@ -1,24 +1,38 @@
 
 import React, { useState, useMemo } from 'react';
-import { CreditCard, FileText, CalendarCheck, CheckCircle, XCircle, HelpCircle, TrendingUp, User, Users, Mail, Phone, ExternalLink, Download, StickyNote, Trash2, Send, Plus, Check, ChevronLeft, ChevronRight, Clock, MapPin, AlertCircle, Edit2 } from 'lucide-react';
+import { CreditCard, FileText, CalendarCheck, CheckCircle, XCircle, HelpCircle, TrendingUp, User, Users, Mail, Phone, ExternalLink, Download, StickyNote, Trash2, Send, Plus, Check, ChevronLeft, ChevronRight, Clock, MapPin, AlertCircle, Edit2, RefreshCw } from 'lucide-react';
 import { StudentDetailedProfile, AdminNote, DanceClass, Enrollment, VacationPeriod } from '../../../types';
 import { Badge, Button, Modal } from '../../../components/UIComponents';
 import { getSubscriptionColor, getGroupIconClass } from '../../../utils/themeUtils';
-import { calculateAdjustedExpiryDate } from '../../../utils/dateUtils';
+import { calculateSubscriptionExpiryDate } from '../../../utils/dateUtils';
 
 // --- OVERVIEW TAB ---
 export const StudentOverviewTab: React.FC<{ 
     student: StudentDetailedProfile;
     onNavigateToGroup?: (groupId: string) => void;
     onRemoveEnrollment?: (groupId: string, groupName: string) => void;
-}> = ({ student, onNavigateToGroup, onRemoveEnrollment }) => (
+    onTransferEnrollment?: (groupId: string, groupName: string) => void;
+    onAddEnrollment?: () => void;
+    onOpenFreezeModal?: () => void;
+    onRemoveFreezePeriod?: (id: string) => void;
+}> = ({ student, onNavigateToGroup, onRemoveEnrollment, onTransferEnrollment, onAddEnrollment, onOpenFreezeModal, onRemoveFreezePeriod }) => (
     <div className="space-y-6">
         <div className="bg-white dark:bg-gray-900 rounded-[24px] border border-gray-100 dark:border-gray-800 p-6 shadow-sm">
             <div className="flex justify-between items-center mb-4">
                 <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><CreditCard size={16} className="text-blue-500"/> Abonament Activ</h4>
-                <Badge color={getSubscriptionColor(student.subscription.type)}>{student.subscription.type}</Badge>
+                <div className="flex items-center gap-2">
+                    {onOpenFreezeModal && (
+                        <button 
+                            onClick={onOpenFreezeModal}
+                            className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                        >
+                            <Clock size={14} /> Îngheață
+                        </button>
+                    )}
+                    <Badge color={getSubscriptionColor(student.subscription.type)}>{student.subscription.type}</Badge>
+                </div>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div>
                     <p className="text-[10px] font-bold text-gray-400 uppercase">Tip Plată</p>
                     <p className="font-bold text-gray-900 dark:text-white">{student.subscription.autoPayEnabled ? 'Recurent (Loyalty)' : 'Standard (Flexible)'}</p>
@@ -32,10 +46,49 @@ export const StudentOverviewTab: React.FC<{
                 <div><p className="text-[10px] font-bold text-gray-400 uppercase">Ultima Plată</p><p className="font-bold text-gray-900 dark:text-white">{student.subscription.lastPaymentDate || 'N/A'}</p></div>
                 <div><p className="text-[10px] font-bold text-gray-400 uppercase">Expiră la</p><p className="font-bold text-gray-900 dark:text-white">{student.subscription.expiryDate}</p></div>
             </div>
+
+            {student.subscription.freezePeriods && student.subscription.freezePeriods.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-2">Perioade de Înghețare</p>
+                    <div className="space-y-2">
+                        {student.subscription.freezePeriods.map((freeze) => (
+                            <div key={freeze.id} className="flex items-center justify-between bg-blue-50/50 dark:bg-blue-900/10 p-2 rounded-lg border border-blue-100 dark:border-blue-900/30">
+                                <div className="flex items-center gap-2">
+                                    <Clock size={14} className="text-blue-500" />
+                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        {freeze.startDate} - {freeze.endDate}
+                                    </span>
+                                    {freeze.reason && <span className="text-xs text-gray-500">({freeze.reason})</span>}
+                                </div>
+                                {onRemoveFreezePeriod && (
+                                    <button 
+                                        onClick={() => onRemoveFreezePeriod(freeze.id)}
+                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                        title="Șterge înghețarea"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
 
         <div className="bg-white dark:bg-gray-900 rounded-[24px] border border-gray-100 dark:border-gray-800 p-6 shadow-sm">
-            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-4"><Users size={16} className="text-gray-400"/> Grupe Active</h4>
+            <div className="flex items-center justify-between mb-4">
+                <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><Users size={16} className="text-gray-400"/> Grupe Active</h4>
+                {onAddEnrollment && (
+                    <button 
+                        onClick={onAddEnrollment}
+                        className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 transition-colors"
+                        title="Adaugă în grupă"
+                    >
+                        <Plus size={16} />
+                    </button>
+                )}
+            </div>
             <div className="space-y-2">
                 {student.enrollments && student.enrollments.length > 0 ? student.enrollments.map((enr, idx) => (
                     <div 
@@ -47,9 +100,21 @@ export const StudentOverviewTab: React.FC<{
                             onClick={() => enr.groupId && onNavigateToGroup?.(enr.groupId)}
                         >
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${getGroupIconClass(enr.level)}`}>{(enr.style || '').charAt(0)}</div>
-                            <div><p className="text-sm font-bold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors">{enr.groupName || `${enr.style} ${enr.level}`}</p></div>
+                            <div>
+                                <p className="text-sm font-bold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors">{enr.groupName || `${enr.style} ${enr.level}`}</p>
+                                {enr.start_date && <p className="text-[10px] text-gray-400">Din: {enr.start_date}</p>}
+                            </div>
                         </div>
                         <div className="flex items-center gap-2">
+                             {onTransferEnrollment && enr.groupId && (
+                                 <button 
+                                    onClick={(e) => { e.stopPropagation(); onTransferEnrollment(enr.groupId!, enr.groupName || ''); }}
+                                    className="p-2 text-gray-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                    title="Transferă în altă grupă"
+                                 >
+                                    <RefreshCw size={16} />
+                                 </button>
+                             )}
                              {onRemoveEnrollment && enr.groupId && (
                                  <button 
                                     onClick={(e) => { e.stopPropagation(); onRemoveEnrollment(enr.groupId!, enr.groupName || ''); }}
@@ -65,6 +130,30 @@ export const StudentOverviewTab: React.FC<{
                 )) : <p className="text-sm text-gray-400 italic text-center py-4">Nu este înscris la nicio grupă.</p>}
             </div>
         </div>
+
+        {student.past_enrollments && student.past_enrollments.length > 0 && (
+            <div className="bg-white dark:bg-gray-900 rounded-[24px] border border-gray-100 dark:border-gray-800 p-6 shadow-sm">
+                <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-4"><Users size={16} className="text-gray-400"/> Istoric Grupe</h4>
+                <div className="space-y-2">
+                    {student.past_enrollments.map((enr, idx) => (
+                        <div 
+                            key={idx} 
+                            className="flex items-center justify-between p-3 border border-gray-100 dark:border-gray-800 rounded-xl bg-gray-50 dark:bg-gray-800/50"
+                        >
+                            <div className="flex items-center gap-3 flex-1">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400`}>{(enr.style || '').charAt(0)}</div>
+                                <div>
+                                    <p className="text-sm font-bold text-gray-500 dark:text-gray-400">{enr.groupName || `${enr.style} ${enr.level}`}</p>
+                                    <p className="text-[10px] text-gray-400">
+                                        {enr.start_date ? `${enr.start_date} - ` : ''}{enr.end_date || 'Inactiv'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
     </div>
 );
 
@@ -74,10 +163,11 @@ export const StudentAttendanceTab: React.FC<{
     allClasses: DanceClass[]; 
     onCheckIn: (classId: string, date: string, status?: 'present' | 'absent' | 'none') => void;
     enrollments?: Enrollment[];
+    past_enrollments?: Enrollment[];
     onUpdateHistory?: (newHistory: any[]) => void;
     paymentHistory?: any[];
     vacationPeriods?: VacationPeriod[];
-}> = ({ history, allClasses, onCheckIn, enrollments = [], onUpdateHistory, paymentHistory = [], vacationPeriods = [] }) => {
+}> = ({ history, allClasses, onCheckIn, enrollments = [], past_enrollments = [], onUpdateHistory, paymentHistory = [], vacationPeriods = [] }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
@@ -91,18 +181,12 @@ export const StudentAttendanceTab: React.FC<{
     // Helper: Check if date is covered by subscription
     const isDateCovered = (dateStr: string) => {
         const targetDate = new Date(dateStr);
-        // Check payment history
-        const covered = paymentHistory.some(payment => {
-            const payDate = new Date(payment.date);
-            const expiryDate = calculateAdjustedExpiryDate(payment.date, vacationPeriods);
-            
-            // Handle edge cases
-            if (expiryDate.getDate() !== payDate.getDate()) {
-                // This is already handled in calculateAdjustedExpiryDate, but just in case
-            }
-            return targetDate >= payDate && targetDate <= expiryDate;
-        });
-        return covered;
+        // Only consider payments made on or before the target date
+        const relevantPayments = paymentHistory.filter(p => new Date(p.date) <= targetDate);
+        if (relevantPayments.length === 0) return false;
+        
+        const expiryDate = calculateSubscriptionExpiryDate(relevantPayments, relevantPayments[0].date, vacationPeriods);
+        return targetDate <= expiryDate;
     };
 
     // Map history for quick lookup
@@ -132,8 +216,12 @@ export const StudentAttendanceTab: React.FC<{
     };
 
     // Helper: Matching Logic
-    const isClassMatchingEnrollment = (c: DanceClass, enrollments: Enrollment[]) => {
+    const isClassMatchingEnrollment = (c: DanceClass, enrollments: Enrollment[], dateStr: string) => {
         return enrollments.some(e => {
+            // Check dates
+            if (e.start_date && dateStr < e.start_date) return false;
+            if (e.end_date && dateStr > e.end_date) return false;
+
             // 1. Direct ID match (Best case)
             if (e.groupId === c.id) return true;
             // 2. Fallback: Style & Level match (Common case if IDs differ)
@@ -145,12 +233,13 @@ export const StudentAttendanceTab: React.FC<{
     const getDayClasses = (dayStr: string) => {
         const targetDateObj = new Date(dayStr);
         const dayOfWeek = targetDateObj.getDay();
+        const allEnrollments = [...enrollments, ...past_enrollments];
 
         const scheduledClasses = allClasses.filter(c => {
             const cDate = new Date(c.date);
             const matchesDay = c.date === dayStr || cDate.getDay() === dayOfWeek;
             if (!matchesDay) return false;
-            return isClassMatchingEnrollment(c, enrollments);
+            return isClassMatchingEnrollment(c, allEnrollments, dayStr);
         });
 
         // Deduplicate
@@ -202,11 +291,12 @@ export const StudentAttendanceTab: React.FC<{
                         const dayOfWeek = dayDate.getDay();
 
                         // 1. Identify Scheduled Classes for this day
+                        const allEnrollments = [...enrollments, ...past_enrollments];
                         const scheduledClasses = allClasses.filter(c => {
                             const cDate = new Date(c.date);
                             const matchesDay = c.date === dateStr || cDate.getDay() === dayOfWeek;
                             if (!matchesDay) return false;
-                            return isClassMatchingEnrollment(c, enrollments);
+                            return isClassMatchingEnrollment(c, allEnrollments, dateStr);
                         });
 
                         // Deduplicate
@@ -415,27 +505,24 @@ const AttendanceDayModal: React.FC<{
 };
 
 // --- PAYMENTS TAB ---
-export const StudentPaymentsTab: React.FC<{ payments: any[], onAddPayment?: () => void, onEditPayment?: (payment: any) => void }> = ({ payments, onAddPayment, onEditPayment }) => (
+export const StudentPaymentsTab: React.FC<{ payments: any[], onAddPayment?: () => void, onEditPayment?: (payment: any) => void, onSyncPayments?: () => void, isSyncing?: boolean }> = ({ payments, onAddPayment, onEditPayment, onSyncPayments, isSyncing }) => (
     <div className="space-y-6">
         <div className="bg-white dark:bg-gray-900 rounded-[24px] border border-gray-100 dark:border-gray-800 p-6 shadow-sm">
             <div className="flex justify-between items-center mb-4">
-                <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><CreditCard size={16} className="text-blue-600"/> Metode de Plată</h4>
-                {onAddPayment && (
-                    <Button onClick={onAddPayment} className="h-8 text-xs px-3 bg-blue-50 text-blue-600 hover:bg-blue-100 border-none shadow-none">
-                        <Plus size={14} className="mr-1"/> Adaugă Plată
-                    </Button>
-                )}
-            </div>
-            <div className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-800 rounded-xl bg-gray-50 dark:bg-gray-800/50">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-7 bg-gray-200 dark:bg-gray-700 rounded-md flex items-center justify-center text-[9px] font-bold text-gray-500">VISA</div>
-                    <div><p className="text-xs font-bold text-gray-900 dark:text-white">Visa •••• 4242</p><p className="text-[10px] text-gray-500">Expiră 12/28</p></div>
+                <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><FileText size={16} className="text-gray-400"/> Istoric Plăți</h4>
+                <div className="flex items-center gap-2">
+                    {onSyncPayments && (
+                        <Button onClick={onSyncPayments} disabled={isSyncing} className="!w-auto h-8 text-xs px-4 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border-none shadow-none font-bold">
+                            <RefreshCw size={14} className={`mr-1 ${isSyncing ? 'animate-spin' : ''}`}/> Sincronizează Stripe
+                        </Button>
+                    )}
+                    {onAddPayment && (
+                        <Button onClick={onAddPayment} className="!w-auto h-8 text-xs px-4 bg-amber-400 text-amber-950 hover:bg-amber-500 border-none shadow-none font-bold">
+                            <Plus size={14} className="mr-1"/> Adaugă Plată
+                        </Button>
+                    )}
                 </div>
-                <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">Principal</span>
             </div>
-        </div>
-        <div className="bg-white dark:bg-gray-900 rounded-[24px] border border-gray-100 dark:border-gray-800 p-6 shadow-sm">
-            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-4"><FileText size={16} className="text-gray-400"/> Istoric Plăți</h4>
             <div className="space-y-3">
                 {payments.map((tx, idx) => (
                     <div key={idx} className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-800 rounded-xl">
@@ -445,6 +532,11 @@ export const StudentPaymentsTab: React.FC<{ payments: any[], onAddPayment?: () =
                         </div>
                         <div className="flex items-center gap-3">
                             <div className="text-right"><p className="text-sm font-black text-gray-900 dark:text-white">{tx.amount} {tx.currency}</p><p className="text-[10px] text-gray-500 mb-1">{tx.date}</p></div>
+                            {tx.invoiceUrl && (
+                                <a href={tx.invoiceUrl} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors" title="Vezi chitanța">
+                                    <ExternalLink size={16} />
+                                </a>
+                            )}
                             {onEditPayment && (
                                 <button onClick={() => onEditPayment(tx)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" title="Editează">
                                     <Edit2 size={16} />

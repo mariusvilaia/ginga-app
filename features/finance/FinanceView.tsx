@@ -27,6 +27,23 @@ export const FinanceView: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'flow' | 'table' | 'budget' | 'cashflow' | 'subs' | 'costs' | 'roi' | 'breakeven' | 'trends' | 'risks' | 'stripe'>('flow');
     const [isSyncing, setIsSyncing] = useState(false);
     
+    const handleConnectRevolut = async () => {
+        try {
+            const response = await fetch('/api/revolut/auth/url');
+            const { url } = await response.json();
+            const authWindow = window.open(url, 'revolut_auth', 'width=600,height=700');
+            
+            window.addEventListener('message', (event) => {
+                if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+                    alert('Revolut conectat cu succes!');
+                    handleSync();
+                }
+            }, { once: true });
+        } catch (error) {
+            console.error('Revolut auth error:', error);
+        }
+    };
+    
     const multiplier = viewMode === 'quarter' ? 3 : viewMode === 'year' ? 12 : 1;
 
     // Calculate derived data based on the Base Financials from Context + View Mode + LIVE STUDENTS
@@ -141,7 +158,6 @@ export const FinanceView: React.FC = () => {
         { id: 'breakeven', label: 'Break-Even', icon: Scale },
         { id: 'trends', label: 'Trenduri', icon: LineChart },
         { id: 'risks', label: 'Riscuri', icon: ShieldAlert },
-        { id: 'stripe', label: 'Stripe Live', icon: CreditCard },
     ];
 
     const formatTime = (date: Date | null) => {
@@ -167,6 +183,14 @@ export const FinanceView: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex gap-3">
+                    <Button 
+                        variant="secondary" 
+                        onClick={handleConnectRevolut}
+                        className="!w-auto px-4 h-10 text-xs gap-2 border-dashed border-gray-300 hover:border-blue-300 hover:text-blue-600"
+                    >
+                        <RefreshCw size={14} /> 
+                        Conectează Revolut
+                    </Button>
                     <Button 
                         variant="secondary" 
                         onClick={handleSync}
@@ -206,7 +230,6 @@ export const FinanceView: React.FC = () => {
                         {activeTab === 'breakeven' && <BreakEvenView data={data} />}
                         {activeTab === 'trends' && <TrendsView data={data} />}
                         {activeTab === 'risks' && <RiskView data={data} />}
-                        {activeTab === 'stripe' && <StripeIntegrationView />}
                     </div>
 
                     <div className="w-full xl:w-80 flex flex-col gap-6 shrink-0">

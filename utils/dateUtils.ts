@@ -1,5 +1,22 @@
 import { VacationPeriod } from '../types';
 
+export const calculateSubscriptionExpiryDate = (paymentHistory: any[], initialExpiryDate: string, vacationPeriods: VacationPeriod[]): Date => {
+    const sortedPayments = [...(paymentHistory || [])]
+        .filter(p => p.status === 'success')
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    if (sortedPayments.length > 0) {
+        let expiry = calculateAdjustedExpiryDate(sortedPayments[0].date, vacationPeriods);
+        for (let i = 1; i < sortedPayments.length; i++) {
+            const paymentDate = new Date(sortedPayments[i].date);
+            const baseDate = paymentDate > expiry ? sortedPayments[i].date : expiry.toISOString().split('T')[0];
+            expiry = calculateAdjustedExpiryDate(baseDate, vacationPeriods);
+        }
+        return expiry;
+    }
+    return initialExpiryDate ? new Date(initialExpiryDate) : new Date();
+};
+
 export const calculateAdjustedExpiryDate = (paymentDateStr: string, vacationPeriods: VacationPeriod[]): Date => {
     const paymentDate = new Date(paymentDateStr);
     let expiryDate = new Date(paymentDate);

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { MapPin, User, Users, Eye, AlertCircle, Save, RotateCcw } from 'lucide-react';
-import { Badge, Switch, Button } from '../../components/UIComponents';
+import { Badge, Switch, Button, Modal, Input } from '../../components/UIComponents';
 import { getStyleTheme } from '../../utils/themeUtils';
 import { useData } from '../../contexts/DataContext';
 import { GroupDetailedProfile } from '../../types';
@@ -32,6 +32,9 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ onNavigateToClass })
     const [hasChanges, setHasChanges] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [selectedLocation, setSelectedLocation] = useState<'All' | 'Mille 18' | 'Victoriei Ballroom'>('All');
+    const [showEffectiveDateModal, setShowEffectiveDateModal] = useState(false);
+    const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
+    const [statusFilter, setStatusFilter] = useState<'active' | 'launching' | 'closed' | 'all'>('active');
 
     // Sync localGroups with context groups on load or reset
     useEffect(() => {
@@ -86,7 +89,11 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ onNavigateToClass })
         setDraggedGroupId(null);
     };
 
-    const handleSave = async () => {
+    const handleSave = () => {
+        setShowEffectiveDateModal(true);
+    };
+
+    const confirmSave = async () => {
         setIsSaving(true);
         try {
             const promises = [];
@@ -94,11 +101,12 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ onNavigateToClass })
                 const original = groups.find(g => g.id === localGroup.id);
                 // Only update if schedule actually changed
                 if (original && JSON.stringify(localGroup.schedule) !== JSON.stringify(original.schedule)) {
-                    promises.push(updateMasterSchedule(localGroup.id, localGroup.schedule));
+                    promises.push(updateMasterSchedule(localGroup.id, localGroup.schedule, undefined, undefined, effectiveDate));
                 }
             }
             await Promise.all(promises);
             setHasChanges(false);
+            setShowEffectiveDateModal(false);
         } catch (error) {
             console.error("Failed to save schedule:", error);
             alert("Eroare la salvarea orarului.");
@@ -126,16 +134,14 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ onNavigateToClass })
 
     const renderTimeSlot = (dayName: string, time: string, room: string, dayDate: string) => {
         // Use localGroups for rendering to reflect drag ops immediately
-        const existingGroup = localGroups.find(g => 
+        const existingGroups = localGroups.filter(g => 
             g.schedule.day === dayName && 
             g.schedule.time === time && 
-            g.schedule.room === room
+            g.schedule.room === room &&
+            (statusFilter === 'all' || 
+             (statusFilter === 'active' && (g.status === 'active' || g.status === 'recycling')) ||
+             g.status === statusFilter)
         );
-
-        // Check if this specific group has been modified compared to DB
-        const isModified = existingGroup && groups.find(g => g.id === existingGroup.id)?.schedule.time !== time;
-
-        const theme = existingGroup ? getStyleTheme(existingGroup.style, existingGroup.level) : null;
 
         return (
             <div 
@@ -143,64 +149,72 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ onNavigateToClass })
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, dayName, time, room)}
                 className={`
-                    min-h-[140px] rounded-xl border border-dashed transition-all p-1 flex flex-col relative
-                    ${draggedGroupId && !existingGroup ? 'bg-blue-50/50 border-blue-300 dark:bg-blue-900/20 dark:border-blue-700' : 'border-transparent'}
-                    ${!existingGroup ? 'hover:bg-gray-50 dark:hover:bg-gray-800/30' : ''}
+                    min-h-[140px] rounded-xl border border-dashed transition-all p-1 flex flex-col relative gap-2
+                    ${draggedGroupId && existingGroups.length === 0 ? 'bg-blue-50/50 border-blue-300 dark:bg-blue-900/20 dark:border-blue-700' : 'border-transparent'}
+                    ${existingGroups.length === 0 ? 'hover:bg-gray-50 dark:hover:bg-gray-800/30' : ''}
                 `}
             >
-                {!existingGroup && (
+                {existingGroups.length === 0 && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 hover:opacity-100 transition-opacity">
                         <span className="text-xs font-bold text-gray-300 dark:text-gray-600">{time}</span>
                     </div>
                 )}
 
-                {existingGroup && theme && (
-                    <div 
-                        draggable={true}
-                        onDragStart={(e) => handleDragStart(e, existingGroup.id)}
-                        onDragEnd={handleDragEnd}
-                        onClick={(e) => { e.stopPropagation(); onNavigateToClass(existingGroup.id); }}
-                        className={`h-full bg-white dark:bg-gray-900 p-3 rounded-xl border shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative z-10 overflow-hidden
-                            ${existingGroup.risk?.level === 'high' ? 'border-red-400 dark:border-red-500 ring-1 ring-red-100 dark:ring-red-900/20' : ''}
-                            ${isModified ? 'border-blue-400 ring-2 ring-blue-100 dark:ring-blue-900 shadow-lg' : 'border-gray-100 dark:border-gray-800'}
-                        `}
-                    >
+                {existingGroups.map(existingGroup => {
+                    const isModified = groups.find(g => g.id === existingGroup.id)?.schedule.time !== time;
+                    const theme = getStyleTheme(existingGroup.style, existingGroup.level);
+                    
+                    return (
                         <div 
-                            className="absolute inset-0 pointer-events-none transition-colors duration-500 z-0"
-                            style={{
-                                backgroundColor: showHeatmap 
-                                    ? getHeatmapColor(existingGroup.stats.enrolledCount || 0, existingGroup.schedule.room) 
-                                    : 'transparent'
-                            }} 
-                        />
+                            key={existingGroup.id}
+                            draggable={true}
+                            onDragStart={(e) => handleDragStart(e, existingGroup.id)}
+                            onDragEnd={handleDragEnd}
+                            onClick={(e) => { e.stopPropagation(); onNavigateToClass(existingGroup.id); }}
+                            className={`flex-1 bg-white dark:bg-gray-900 p-3 rounded-xl border shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative z-10 overflow-hidden
+                                ${existingGroup.risk?.level === 'high' ? 'border-red-400 dark:border-red-500 ring-1 ring-red-100 dark:ring-red-900/20' : ''}
+                                ${isModified ? 'border-blue-400 ring-2 ring-blue-100 dark:ring-blue-900 shadow-lg' : 'border-gray-100 dark:border-gray-800'}
+                                ${existingGroup.status === 'closed' ? 'opacity-60 grayscale' : ''}
+                                ${existingGroup.status === 'launching' ? 'border-dashed border-2 border-brand-yellow' : ''}
+                            `}
+                        >
+                            <div 
+                                className="absolute inset-0 pointer-events-none transition-colors duration-500 z-0"
+                                style={{
+                                    backgroundColor: showHeatmap 
+                                        ? getHeatmapColor(existingGroup.stats.enrolledCount || 0, existingGroup.schedule.room) 
+                                        : 'transparent'
+                                }} 
+                            />
 
-                        <div className="relative z-10 flex flex-col h-full">
-                            <div className="flex justify-between items-start mb-2">
-                                <Badge color={`${theme.bg} ${theme.text} ${theme.bg === 'bg-white' ? 'border border-gray-200' : ''}`}>{existingGroup.schedule.time}</Badge>
-                                <span className="text-[10px] text-gray-400">{existingGroup.schedule.duration}</span>
-                            </div>
-                            <h4 className="font-bold text-gray-900 dark:text-white text-sm leading-tight mb-1">{existingGroup.name}</h4>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1">
-                                <User size={10} /> {existingGroup.instructors.map((i: any) => i.name.split(' ')[0]).join('&')}
-                            </p>
-                            <div className="flex justify-between items-center border-t border-gray-50 dark:border-gray-800 pt-2 mt-auto">
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-400">
-                                    <Users size={12}/> 
-                                    <span className={existingGroup.stats.enrolledCount < 15 ? 'text-red-500' : ''}>
-                                        {existingGroup.stats.enrolledCount}/{existingGroup.stats.maxCapacity}
-                                    </span>
-                                    {existingGroup.stats.enrolledCount < 15 && (
-                                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 ml-1" title="Low Occupancy"></span>
-                                    )}
+                            <div className="relative z-10 flex flex-col h-full">
+                                <div className="flex justify-between items-start mb-2">
+                                    <Badge color={`${theme.bg} ${theme.text} ${theme.bg === 'bg-white' ? 'border border-gray-200' : ''}`}>{existingGroup.schedule.time}</Badge>
+                                    <span className="text-[10px] text-gray-400">{existingGroup.schedule.duration}</span>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    {existingGroup.stats.energyLevel === 'Low' && <AlertCircle size={10} className="text-red-500"/>}
-                                    <span className={`text-[10px] font-bold ${existingGroup.stats.energyLevel === 'High' ? 'text-green-500' : existingGroup.stats.energyLevel === 'Low' ? 'text-red-500' : 'text-yellow-500'}`}>{existingGroup.stats.energyLevel}</span>
+                                <h4 className="font-bold text-gray-900 dark:text-white text-sm leading-tight mb-1">{existingGroup.name}</h4>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1">
+                                    <User size={10} /> {existingGroup.instructors.map((i: any) => i.name.split(' ')[0]).join('&')}
+                                </p>
+                                <div className="flex justify-between items-center border-t border-gray-50 dark:border-gray-800 pt-2 mt-auto">
+                                    <div className="flex items-center gap-1 text-[10px] font-bold text-gray-400">
+                                        <Users size={12}/> 
+                                        <span className={existingGroup.stats.enrolledCount < 15 ? 'text-red-500' : ''}>
+                                            {existingGroup.stats.enrolledCount}/{existingGroup.stats.maxCapacity}
+                                        </span>
+                                        {existingGroup.stats.enrolledCount < 15 && (
+                                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 ml-1" title="Low Occupancy"></span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        {existingGroup.stats.energyLevel === 'Low' && <AlertCircle size={10} className="text-red-500"/>}
+                                        <span className={`text-[10px] font-bold ${existingGroup.stats.energyLevel === 'High' ? 'text-green-500' : existingGroup.stats.energyLevel === 'Low' ? 'text-red-500' : 'text-yellow-500'}`}>{existingGroup.stats.energyLevel}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })}
             </div>
         );
     };
@@ -228,6 +242,23 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ onNavigateToClass })
                     <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">Modifică structura săptămânală a grupelor.</p>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
+                    {/* Status Filter */}
+                    <div className="relative group">
+                        <select 
+                            value={statusFilter} 
+                            onChange={(e) => setStatusFilter(e.target.value as any)}
+                            className="pl-4 pr-8 py-2 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl text-xs font-bold shadow-sm outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer h-10 min-w-[140px] text-gray-700 dark:text-gray-200"
+                        >
+                            <option value="active">Grupe Active (Prezent)</option>
+                            <option value="launching">În Lansare (Viitor)</option>
+                            <option value="closed">Grupe Închise (Trecut)</option>
+                            <option value="all">Toate Grupele</option>
+                        </select>
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        </div>
+                    </div>
+
                     {/* Location Selector */}
                     <div className="relative group">
                         <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none z-10" />
@@ -292,6 +323,36 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ onNavigateToClass })
                   </div>
                </div>
            )}
+           
+           <Modal 
+               isOpen={showEffectiveDateModal} 
+               onClose={() => setShowEffectiveDateModal(false)} 
+               title="Dată de început"
+           >
+               <div className="space-y-6">
+                   <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
+                       <p className="text-xs text-blue-700 dark:text-blue-300 font-medium leading-relaxed">
+                           Alege data de la care noile ore vor intra în vigoare. Toate programările existente <strong>înainte</strong> de această dată vor rămâne neschimbate pentru a păstra integritatea datelor istorice.
+                       </p>
+                   </div>
+                   
+                   <Input 
+                       label="Data de început (Effective Date)" 
+                       type="date" 
+                       value={effectiveDate} 
+                       onChange={(e) => setEffectiveDate(e.target.value)}
+                   />
+                   
+                   <div className="flex gap-3 pt-4">
+                       <Button variant="secondary" onClick={() => setShowEffectiveDateModal(false)} className="!w-auto px-6">
+                           Anulează
+                       </Button>
+                       <Button onClick={confirmSave} isLoading={isSaving} className="!w-auto px-6 bg-blue-600 hover:bg-blue-700 text-white border-none">
+                           Confirmă și Salvează
+                       </Button>
+                   </div>
+               </div>
+           </Modal>
         </div>
     );
 };

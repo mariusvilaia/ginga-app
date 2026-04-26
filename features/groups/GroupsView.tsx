@@ -1,7 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, ListTodo, Calendar, MapPin, MoreHorizontal, MessageSquare, CalendarCheck, Download, ArrowUpRight, ArrowDownRight, AlertCircle, Check, Filter, User, PlayCircle } from 'lucide-react';
+import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { GroupDetailedProfile, DanceStyle, SkillLevel } from '../../types';
+import { format, subMonths, isAfter, startOfMonth, eachDayOfInterval, isSameDay } from 'date-fns';
+import { ro } from 'date-fns/locale';
 import { getStyleTheme } from '../../utils/themeUtils';
 import { Button, Badge } from '../../components/UIComponents';
 import { useData } from '../../contexts/DataContext';
@@ -40,6 +43,64 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ initialGroupId, onClearI
     const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [activeStyle, setActiveStyle] = useState<string>('Toate');
+    const [timeRange, setTimeRange] = useState<number>(3); // Default 3 months
+
+    const timeRanges = [
+        { label: '1 lună', value: 1 },
+        { label: '2 luni', value: 2 },
+        { label: '3 luni', value: 3 },
+        { label: '6 luni', value: 6 },
+        { label: '1 an', value: 12 },
+    ];
+
+    // Aggregate real attendance data from all students
+    const getGroupAttendanceData = (group: GroupDetailedProfile, months: number) => {
+        const cutoffDate = subMonths(new Date(), months);
+        
+        // Map to store counts per date
+        const attendanceMap: Record<string, number> = {};
+        
+        // 1. Check if group has pre-calculated history (from Firestore)
+        if (group.attendanceHistory && group.attendanceHistory.length > 0) {
+            group.attendanceHistory.forEach(h => {
+                if (isAfter(new Date(h.date), cutoffDate)) {
+                    attendanceMap[h.date] = (attendanceMap[h.date] || 0) + h.count;
+                }
+            });
+        }
+        
+        // 2. Also aggregate from students' individual histories to ensure real-time accuracy
+        // (This covers cases where group.attendanceHistory might not be perfectly synced)
+        students.forEach(student => {
+            student.attendanceHistory?.forEach(record => {
+                if (record.status === 'present' && record.className === group.name) {
+                    if (isAfter(new Date(record.date), cutoffDate)) {
+                        // We use a Set or similar if we wanted to avoid double counting with group.attendanceHistory,
+                        // but usually it's one or the other. 
+                        // If group.attendanceHistory was empty, this will populate it.
+                        if (!group.attendanceHistory || group.attendanceHistory.length === 0) {
+                            attendanceMap[record.date] = (attendanceMap[record.date] || 0) + 1;
+                        }
+                    }
+                }
+            });
+        });
+
+        const history = Object.entries(attendanceMap).map(([date, count]) => ({
+            date,
+            count
+        }));
+
+        if (history.length === 0) return [];
+
+        return history
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+            .map(h => ({
+                date: format(new Date(h.date), months <= 1 ? 'dd MMM' : months <= 3 ? 'dd MMM' : 'MMM yy', { locale: ro }),
+                count: h.count,
+                fullDate: h.date
+            }));
+    };
 
     useEffect(() => {
         if(initialGroupId) {
@@ -129,6 +190,20 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ initialGroupId, onClearI
 
                      <div className="flex items-center gap-3 shrink-0">
                          <div className="flex bg-white dark:bg-gray-900 p-1 rounded-xl border border-gray-200 dark:border-gray-800">
+                             {timeRanges.map(range => (
+                                 <button
+                                     key={range.value}
+                                     onClick={() => setTimeRange(range.value)}
+                                     className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                         timeRange === range.value 
+                                         ? 'bg-blue-50 text-blue-600' 
+                                         : 'text-gray-400 hover:text-gray-600'
+                                     }`}
+                                 >
+                                     {range.label}
+                                 </button>
+                             ))}
+                             <div className="w-px h-6 bg-gray-200 dark:bg-gray-800 mx-1 self-center"></div>
                              <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-400 hover:text-gray-600'}`}><LayoutDashboard size={18} /></button>
                              <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-400 hover:text-gray-600'}`}><ListTodo size={18} /></button>
                          </div>
@@ -146,7 +221,7 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ initialGroupId, onClearI
                     const weekInfo = getCourseWeek(group.startDate);
 
                     return (
-                    <div key={group.id} onClick={() => setSelectedGroup(group)} className="bg-white dark:bg-gray-900 p-6 rounded-[24px] border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-xl transition-all flex flex-col relative cursor-pointer group h-full">
+                    <div key={group.id} onClick={() => setSelectedGroup(group)} className="bg-white border border-gray-100 shadow-sm dark:bg-gray-900 dark:border-gray-800 p-6 rounded-[24px] hover:shadow-md transition-all flex flex-col relative cursor-pointer group h-full">
                         
                         {/* Header: Level & Menu */}
                         <div className="flex justify-between items-start mb-4">
@@ -174,6 +249,11 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ initialGroupId, onClearI
                                     <span>{group.schedule.day} • {group.schedule.time} • {group.schedule.room.split(' ')[0]}</span>
                                 </div>
                                 
+                                <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg w-fit">
+                                    <User size={14}/>
+                                    <span className="text-xs font-bold">♀ {group.students.filter(s => s.gender === 'F').length} / ♂ {group.students.filter(s => s.gender === 'M').length}</span>
+                                </div>
+                                
                                 {group.risk.level === 'high' ? (
                                     <div className="inline-flex items-center gap-2 bg-red-50 text-red-600 px-3 py-1.5 rounded-lg w-fit">
                                         <AlertCircle size={14}/>
@@ -192,7 +272,7 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ initialGroupId, onClearI
                                     <div key={i} className="flex flex-col items-center">
                                         <img 
                                             src={getInstructorAvatar(inst)} 
-                                            className="w-12 h-12 rounded-full border-2 border-white bg-gray-100 object-cover shadow-sm" 
+                                            className="w-16 h-16 rounded-full border-2 border-white bg-gray-100 object-cover shadow-sm" 
                                             title={inst.name}
                                         />
                                         <span className="text-[10px] font-bold text-gray-500 mt-1">{(inst.name || '').split(' ')[0]}</span>
@@ -201,22 +281,40 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ initialGroupId, onClearI
                             </div>
                         </div>
 
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-2 gap-4 mt-auto mb-4">
-                            <div className="bg-[#F9FAFB] dark:bg-gray-800 p-3 rounded-2xl text-center">
-                                <span className="block font-black text-2xl text-gray-900 dark:text-white mb-1">{realCount}</span>
-                                <span className="text-gray-400 uppercase font-bold text-[10px] tracking-wider">Cursanți</span>
-                            </div>
-                            <div className="bg-[#F9FAFB] dark:bg-gray-800 p-3 rounded-2xl text-center">
-                                <span className="font-black text-2xl text-gray-900 dark:text-white flex items-center justify-center gap-1 mb-1">
-                                    {group.stats.averageAttendance}% 
-                                    {group.stats.trend === 'growing' 
-                                        ? <ArrowUpRight size={16} className="text-green-500"/> 
-                                        : <ArrowDownRight size={16} className="text-red-500"/>
-                                    }
-                                </span>
-                                <span className="text-gray-400 uppercase font-bold text-[10px] tracking-wider">Prezență</span>
-                            </div>
+                        {/* Attendance Chart */}
+                        <div className="h-32 mt-auto mb-4 -mx-2 flex items-center justify-center">
+                            {getGroupAttendanceData(group, timeRange).length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={getGroupAttendanceData(group, timeRange)}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                        <XAxis 
+                                            dataKey="date" 
+                                            axisLine={false} 
+                                            tickLine={false} 
+                                            tick={{ fontSize: 9, fill: '#9CA3AF', fontWeight: 600 }}
+                                            interval="preserveStartEnd"
+                                        />
+                                        <YAxis hide domain={[0, 50]} />
+                                        <Tooltip 
+                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px', fontWeight: 'bold' }}
+                                            labelStyle={{ color: '#6B7280' }}
+                                        />
+                                        <Line 
+                                            type="monotone" 
+                                            dataKey="count" 
+                                            stroke="#3B82F6" 
+                                            strokeWidth={3} 
+                                            dot={{ r: 3, fill: '#3B82F6', strokeWidth: 2, stroke: '#fff' }}
+                                            activeDot={{ r: 5, strokeWidth: 0 }}
+                                            animationDuration={1000}
+                                        />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-gray-800/50 w-full h-full flex items-center justify-center rounded-2xl border border-dashed border-gray-200 dark:border-gray-700">
+                                    Nicio dată de prezență
+                                </div>
+                            )}
                         </div>
 
                         {/* Footer Actions */}
@@ -260,15 +358,32 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ initialGroupId, onClearI
                                       </div>
                                   </div>
                               </div>
-                              <div className="flex items-center gap-8 mr-6">
-                                  <div className="text-center w-16">
-                                      <span className="block font-black text-gray-900 dark:text-white">{realCount}</span>
-                                      <span className="text-[9px] text-gray-400 uppercase font-bold">Cursanți</span>
-                                  </div>
-                                  <div className="text-center w-16">
-                                      <span className="block font-black text-gray-900 dark:text-white">{group.stats.averageAttendance}%</span>
-                                      <span className="text-[9px] text-gray-400 uppercase font-bold">Prezență</span>
-                                  </div>
+                              <div className="w-48 h-12 flex items-center justify-center">
+                                  {getGroupAttendanceData(group, timeRange).length > 0 ? (
+                                      <ResponsiveContainer width="100%" height="100%">
+                                          <LineChart data={getGroupAttendanceData(group, timeRange)}>
+                                              <Line 
+                                                type="monotone" 
+                                                dataKey="count" 
+                                                stroke="#3B82F6" 
+                                                strokeWidth={2} 
+                                                dot={false} 
+                                                animationDuration={1000}
+                                              />
+                                              <XAxis dataKey="date" hide />
+                                              <YAxis hide domain={[0, 50]} />
+                                              <Tooltip 
+                                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
+                                              />
+                                          </LineChart>
+                                      </ResponsiveContainer>
+                                  ) : (
+                                      <div className="text-[8px] font-bold text-gray-300 uppercase tracking-tight">Fără date</div>
+                                  )}
+                              </div>
+                              <div className="text-center w-24">
+                                  <span className="block font-black text-gray-900 dark:text-white">♀ {group.students.filter(s => s.gender === 'F').length} / ♂ {group.students.filter(s => s.gender === 'M').length}</span>
+                                  <span className="text-[9px] text-gray-400 uppercase font-bold">Raport F/B</span>
                               </div>
                               <div className="flex items-center gap-2 pl-4 border-l border-gray-100">
                                   <button className="p-2 text-gray-400 hover:text-gray-900 rounded-lg"><MessageSquare size={18}/></button>
